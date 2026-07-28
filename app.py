@@ -107,12 +107,21 @@ if st.button("🚀 Run Market Analysis", type="primary"):
                     potencial_procent = (rozdil_usd / skutecna_cena) * 100
                     zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
+                    # Verdict logic based on RSI and trend
+                    if rsi_val < 35:
+                        verdict = "🟢 Verdict: OVERSOLD (ENTRY)"
+                    elif rsi_val > 65:
+                        verdict = "🔴 Verdict: OVERBOUGHT (CAUTION)"
+                    else:
+                        verdict = "🟡 Verdict: NEUTRAL (WAIT)"
+
                     # Metrics display
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                     col2.metric("RSI (14)", f"{rsi_val:.1f}")
                     col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
+                    st.markdown(f"### {verdict}")
                     st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
                     st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
                     st.write(f"**ATR Volatility:** {atr_val:.2f}")

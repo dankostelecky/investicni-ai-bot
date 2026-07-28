@@ -97,6 +97,9 @@ if st.button("🚀 Run Market Analysis", type="primary"):
                     current_volume = float(data['Volume'].iloc[-1])
                     avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
                     
+                    # Crowd behavior logic
+                    crowd_buying = current_volume > (avg_volume_30d * 2.0) and skutecna_cena > predchozi_cena
+                    crowd_panicking = current_volume > (avg_volume_30d * 2.0) and skutecna_cena < predchozi_cena
                     is_bullish_trend = skutecna_cena > sma_200
 
                     vrchol_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
@@ -107,12 +110,23 @@ if st.button("🚀 Run Market Analysis", type="primary"):
                     # Metrics display
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
-                    col2.metric("RSI", f"{rsi_val:.1f}")
+                    col2.metric("RSI (14)", f"{rsi_val:.1f}")
                     col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
                     st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
                     st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
-                    st.write(f"**SMA200 Trend:** {'✅ OK (Bullish)' :<15} if is_bullish_trend else {'❌ Below SMA200'}")
+                    st.write(f"**ATR Volatility:** {atr_val:.2f}")
+                    
+                    # Crowd psychology status
+                    if crowd_buying:
+                        st.markdown("🔥 **Crowd Alert:** Mass buying detected (High volume + Price up)!")
+                    elif crowd_panicking:
+                        st.markdown("🚨 **Crowd Alert:** Panic selling detected (High volume + Price down)!")
+                    else:
+                        st.markdown("👥 **Crowd Behavior:** Calm / Normal volume.")
+
+                    trend_status = "✅ OK (Bullish vs SMA200)" if is_bullish_trend else "❌ Below SMA200 (Caution)"
+                    st.write(f"**Long-term Trend:** {trend_status}")
 
                     # Prophet prediction chart
                     df = data.reset_index()[['Date', 'Close']]

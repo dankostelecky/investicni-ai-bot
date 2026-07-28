@@ -131,3 +131,15 @@ if st.button("🚀 Run Market Analysis", type="primary"):
 
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
+
+                    # Sekce pro dary v postranním panelu (Sidebar)
+st.sidebar.markdown("---")
+st.sidebar.subheader("☕ Support the Project")
+st.sidebar.write("If this AI scanner helps you, buy me a coffee via Solana (Phantom):")
+
+try:
+    st.sidebar.image("qr_solana.png", caption="Scan with Phantom (SOL / USDC)", width=180)
+    # Zde nahraď text 'TvojeSolanaAdresaZde' svou reálnou adresou peněženky
+    st.sidebar.code("TvojeSolanaAdresaZde", language="text")
+except Exception:
+    st.sidebar.info("Upload 'qr_solana.png' to GitHub to display the QR code.")

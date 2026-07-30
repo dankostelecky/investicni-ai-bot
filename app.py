@@ -180,3 +180,19 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
 
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
+
+# --- DONATION / QR CODE SECTION ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("☕ Support the Creator")
+
+# Vložení QR kódu (ujisti se, že soubor qr_solana.png je ve stejné složce)
+try:
+    st.sidebar.image("qr_solana.png", width=180)
+except Exception:
+    st.sidebar.info("📌 QR code image not found. Please add 'qr_solana.png' to the project folder.")
+
+# Anglický text podle tvého zadání
+st.sidebar.markdown(
+    "<p style='font-size: 0.9em; color: gray;'>If this app entertains you or makes you money, buy me a coffee! ☕</p>", 
+    unsafe_allow_html=True
+)

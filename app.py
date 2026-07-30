@@ -3,13 +3,24 @@ import yfinance as yf
 import pandas as pd
 from prophet import Prophet
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, timedelta
+from supabase import create_client, Client
 
 # Page configuration
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
-st.title("🤖 AI Investment Scanner (News + Crowd + ROI)")
-st.write("This tool analyzes markets, tracks crowd psychology, news sentiment, and calculates potential returns per invested dollar.")
+st.title("🤖 AI Investment Scanner (News + Crowd + AI Learning)")
+st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.")
+
+# --- SUPABASE CONFIGURATION ---
+# Klíče se bezpečně načítají ze Streamlit Secrets (ukážeme si v kroku 4)
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception:
+    supabase = None
+    st.sidebar.warning("⚠️ Database not connected. Predictions will not be saved.")
 
 # Configuration
 TICKERS = ["GLD", "BTC-USD", "VT", "MSFT", "META", "GOOGL", "^GSPC", "BRK-B", "CSPX.L", "ASML", "TSM"]
@@ -63,8 +74,8 @@ def analyze_news_sentiment(ticker_obj):
         return "➖ (News unavailable)", "Error loading news"
 
 # Run Analysis Button
-if st.button("🚀 Run Market Analysis", type="primary"):
-    with st.spinner("Fetching data and running AI analysis..."):
+if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
+    with st.spinner("Fetching data, running AI, and updating database..."):
         
         # Macro status
         try:
@@ -126,7 +137,6 @@ if st.button("🚀 Run Market Analysis", type="primary"):
                     st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
                     st.write(f"**ATR Volatility:** {atr_val:.2f}")
                     
-                    # Crowd psychology status
                     if crowd_buying:
                         st.markdown("🔥 **Crowd Alert:** Mass buying detected (High volume + Price up)!")
                     elif crowd_panicking:
@@ -147,22 +157,27 @@ if st.button("🚀 Run Market Analysis", type="primary"):
                     future = model.make_future_dataframe(periods=PRED_DAYS)
                     forecast = model.predict(future)
 
+                    # Získání predikované ceny za 20 dní
+                    predicted_price_20d = float(forecast.iloc[-1]['yhat'])
+                    target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
+
+                    # Uložení predikce do Supabase databáze
+                    if supabase:
+                        try:
+                            supabase.table("predictions").insert({
+                                "ticker": ticker,
+                                "predicted_price": round(predicted_price_20d, 2),
+                                "target_date": target_date,
+                                "actual_price_at_prediction": round(skutecna_cena, 2)
+                            }).execute()
+                            st.info(f"🧠 AI Learning: Prediction for {ticker} saved to database (Target: {target_date} -> {predicted_price_20d:.2f} USD)")
+                        except Exception as db_err:
+                            st.warning(f"Could not save to DB: {db_err}")
+
                     fig, ax = plt.subplots(figsize=(10, 4))
                     model.plot(forecast, ax=ax)
-                    ax.set_title(f"Prediction for {ticker}")
+                    ax.set_title(f"Prediction for {ticker} (20 days ahead)")
                     st.pyplot(fig)
 
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
-
-                    # Sekce pro dary v postranním panelu (Sidebar)
-st.sidebar.markdown("---")
-st.sidebar.subheader("☕ Support the Project")
-st.sidebar.write("If this AI scanner helps you, buy me a coffee via Solana (Phantom):")
-
-try:
-    st.sidebar.image("qr_solana.png", caption="Scan with Phantom (SOL / USDC)", width=180)
-    # Zde nahraď text 'TvojeSolanaAdresaZde' svou reálnou adresou peněženky
-    st.sidebar.code("TvojeSolanaAdresaZde", language="text")
-except Exception:
-    st.sidebar.info("Upload 'qr_solana.png' to GitHub to display the QR code.")

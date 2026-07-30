@@ -13,14 +13,13 @@ st.title("🤖 AI Investment Scanner (News + Crowd + AI Learning)")
 st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.")
 
 # --- SUPABASE CONFIGURATION ---
-# Klíče se bezpečně načítají ze Streamlit Secrets (ukážeme si v kroku 4)
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
+except Exception as e:
     supabase = None
-    st.sidebar.warning("⚠️ Database not connected. Predictions will not be saved.")
+    st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
 # Configuration
 TICKERS = ["GLD", "BTC-USD", "VT", "MSFT", "META", "GOOGL", "^GSPC", "BRK-B", "CSPX.L", "ASML", "TSM"]

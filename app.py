@@ -22,7 +22,7 @@ except Exception as e:
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
 # Configuration
-TICKERS = ["GLD", "BTC-USD", "VT", "MSFT", "META", "GOOGL", "^GSPC", "BRK-B", "CSPX.L", "ASML", "TSM"]
+TICKERS = ["GLD", "BTC-USD", "VT", "MSFT", "META", "GOOGL", "^GSPC", "BRK-B", "CSPX.L", "ASML", "TSM", "NVDA", "TSLA", "AAPL", "AMZN", "AMD", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
 PRED_DAYS = 20
 
 def calculate_rsi(data, window=14):

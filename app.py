@@ -183,7 +183,7 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
 
 # --- DONATION / QR CODE SECTION ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("☕ Support the Creator - David Seda")
+st.sidebar.subheader("☕ Support the Creator - David_Seda")
 
 # Vložení QR kódu (ujisti se, že soubor qr_solana.png je ve stejné složce)
 try:

@@ -194,7 +194,7 @@ html_manual = """
     <meta charset="UTF-8">
     <title>AI-Driven Quantitative Trading Scanner Manual</title>
     <style>
-        body { font-family: 'Helvetica', sans-serif; line-height: 1.6; color: #222; max-width: 2800px; margin: 40px auto; padding: 20px; }
+        body { font-family: 'Helvetica', sans-serif; line-height: 1.6; color: #222; max-width: 3800px; margin: 40px auto; padding: 20px; }
         h1 { color: #1a3a5f; border-bottom: 3px solid #1a3a5f; padding-bottom: 10px; }
         h2 { color: #2c5e8e; margin-top: 30px; border-bottom: 1px solid #ccc; }
         .metric-box { background: #f8f9fa; border-left: 5px solid #2c5e8e; padding: 15px; margin: 10px 0; }

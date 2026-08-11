@@ -181,6 +181,13 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
 
+
+@app.route("/manual")
+def manual():
+    return render_template("manual.html")
+
+
+
 # --- DONATION / QR CODE SECTION ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")

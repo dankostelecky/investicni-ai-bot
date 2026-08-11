@@ -218,7 +218,7 @@ html_manual = """
 """
 
 # Zobrazení komponenty s dostatečnou výškou a povoleným skrolováním
-st.components.v1.html(html_manual, height=800, scrolling=True)
+st.components.v1.html(html_manual, height=1800, scrolling=True)
 
 
 # --- DONATION / QR CODE SECTION ---

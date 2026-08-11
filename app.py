@@ -182,9 +182,7 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                     st.error(f"Error processing {ticker}: {e}")
 
 
-import streamlit as st
 
-st.title("AI-Driven Quantitative Trading Scanner")
 
 # HTML obsah manuálu
 html_manual = """

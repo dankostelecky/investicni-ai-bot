@@ -244,7 +244,7 @@ html_manual = """
 </body>
 </html>
 """
-
+st.components.v1.html(html_manual, height=800, scrolling=True)
 
 
 # --- DONATION / QR CODE SECTION ---

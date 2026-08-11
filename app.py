@@ -186,16 +186,39 @@ import streamlit as st
 
 st.title("AI-Driven Quantitative Trading Scanner")
 
-# Zobrazení HTML manuálu přímo v aplikaci Streamlit
+# HTML obsah manuálu
 html_manual = """
-<div style="font-family: Helvetica; line-height: 1.6; color: #222;">
-    <h2 style="color: #1a3a5f;">1. Executive Summary</h2>
-    <p>This document outlines the operational protocols...</p>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Helvetica', sans-serif; line-height: 1.6; color: #222; padding: 10px; }
+        h1 { color: #1a3a5f; border-bottom: 3px solid #1a3a5f; padding-bottom: 10px; }
+        h2 { color: #2c5e8e; margin-top: 30px; border-bottom: 1px solid #ccc; }
+        .metric-box { background: #f8f9fa; border-left: 5px solid #2c5e8e; padding: 15px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>AI-Driven Quantitative Trading Scanner</h1>
+    <p><strong>Technical Documentation & Operations Manual</strong></p>
+
+    <h2>1. Executive Summary</h2>
+    <p>This document outlines the operational protocols and analytical methodologies governing the AI-Driven Trading Scanner[cite: 15, 21, 22]. Designed for high-frequency volatility analysis, the platform provides actionable intelligence across equity and crypto markets[cite: 15, 21, 22].</p>
+
+    <h2>2. Mathematical & Analytical Framework</h2>
+    <h3>Relative Strength Index (RSI)</h3>
+    <p>The RSI is the core momentum oscillator utilized for mean-reversion detection[cite: 15, 21, 22].</p>
+    <div class="metric-box">
+        <p><strong>Current Price:</strong> The last traded market price of the asset[cite: 17, 18].</p>
+        <p><strong>RSI (14):</strong> Momentum indicator showing if an asset is oversold (&lt;30) or overbought (&gt;70)[cite: 17, 18].</p>
+    </div>
+</body>
+</html>
 """
 
-st.components.v1.html(html_manual, height=600, scrolling=True)
-
+# Zobrazení komponenty s dostatečnou výškou a povoleným skrolováním
+st.components.v1.html(html_manual, height=800, scrolling=True)
 
 
 # --- DONATION / QR CODE SECTION ---

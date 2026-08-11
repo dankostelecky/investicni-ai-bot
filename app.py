@@ -188,7 +188,60 @@ st.title("AI-Driven Quantitative Trading Scanner")
 
 # HTML obsah manuálu
 html_manual = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Helvetica', sans-serif; line-height: 1.6; color: #222; max-width: 3800px; margin: 40px auto; padding: 20px; }
+        h1 { color: #1a3a5f; border-bottom: 3px solid #1a3a5f; padding-bottom: 10px; }
+        h2 { color: #2c5e8e; margin-top: 30px; border-bottom: 1px solid #ccc; }
+        .metric-box { background: #f8f9fa; border-left: 5px solid #2c5e8e; padding: 15px; margin: 10px 0; }
+        pre { background: #eee; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>AI-Driven Quantitative Trading Scanner</h1>
+    <p><strong>Technical Documentation & Operations Manual</strong><br>
+    Version 1.0.0 | Quantitative Analysis Division</p>
 
+    <h2>1. Executive Summary</h2>
+    <p>This document outlines the operational protocols and analytical methodologies governing the AI-Driven Trading Scanner. Designed for high-frequency volatility analysis, the platform provides actionable intelligence across equity and crypto markets.</p>
+
+    <h2>2. Mathematical & Analytical Framework</h2>
+    <h3>Relative Strength Index (RSI)</h3>
+    <p>The RSI is the core momentum oscillator utilized for mean-reversion detection. It is calculated via the following formula:</p>
+    <pre>RSI = 100 - [ 100 / ( 1 + RS ) ]</pre>
+    <p>Where RS represents the ratio of average gains to average losses over 14 periods. The platform assumes a statistical lookback to optimize signal significance.</p>
+
+    <h2>3. User Interface & Operations</h2>
+    <ul>
+        <li><strong>Dashboard:</strong> Real-time price tracking and RSI visualization.</li>
+        <li><strong>Strategy Editor:</strong> Adjustable parameters for volatility sensitivity.</li>
+        <li><strong>Notification Engine:</strong> Browser-based alerts for threshold breaches.</li>
+    </ul>
+
+    <h2>4. Advanced Feature Suite</h2>
+    <p>Our proprietary model incorporates multi-asset liquidity filtering, which prioritizes assets with the tightest bid-ask spreads, and AI-driven signal validation to mitigate noise from pure momentum strategies.</p>
+
+    <h2>5. Risk Disclaimer</h2>
+    <p>Trading financial assets, including cryptocurrencies, involves substantial risk. This software is provided as an analytical tool; all investment decisions remain the sole responsibility of the user.</p>
+
+    <h2>Data Metrics & Analysis Reference</h2>
+    <div class="metric-box">
+        <p><strong>Current Price:</strong> The last traded market price of the asset.</p>
+        <p><strong>RSI (14):</strong> Momentum indicator showing if an asset is oversold (&lt;30) or overbought (&gt;70).</p>
+        <p><strong>Profit / $1 Invested:</strong> Estimated return metric based on current mean-reversion analysis.</p>
+        <p><strong>Verdict (Oversold/Entry):</strong> AI-generated signal indicating potential long entry based on RSI thresholds.</p>
+        <p><strong>News Sentiment:</strong> Qualitative assessment of market news impact (Positive, Negative, Neutral).</p>
+        <p><strong>Distance to 20d Peak:</strong> Mean distance from the asset's 20-day high, indicating retracement potential.</p>
+        <p><strong>ATR Volatility (Average True Range):</strong> A measure of price variability; higher values indicate greater risk/reward potential.</p>
+        <p><strong>Crowd Behavior:</strong> Analysis of retail volume and social sentiment.</p>
+        <p><strong>Long-term Trend (SMA200):</strong> Comparison vs. 200-day Moving Average; crucial for identifying structural market shifts.</p>
+        <p><strong>AI Learning Prediction:</strong> Machine learning model output forecasting future price targets.</p>
+    </div>
+</body>
+</html>
 """
 st.components.v1.html(html_manual, height=3800, scrolling=True)
 

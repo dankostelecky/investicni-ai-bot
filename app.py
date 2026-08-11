@@ -9,7 +9,7 @@ from supabase import create_client, Client
 # Page configuration
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
-st.title("🤖 AI Investment Scanner (News + Crowd + AI Learning)")
+st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)")
 st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.")
 
 # --- SUPABASE CONFIGURATION ---

@@ -182,9 +182,19 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                     st.error(f"Error processing {ticker}: {e}")
 
 
-@app.route("/manual")
-def manual():
-    return render_template("manual.html")
+import streamlit as st
+
+st.title("AI-Driven Quantitative Trading Scanner")
+
+# Zobrazení HTML manuálu přímo v aplikaci Streamlit
+html_manual = """
+<div style="font-family: Helvetica; line-height: 1.6; color: #222;">
+    <h2 style="color: #1a3a5f;">1. Executive Summary</h2>
+    <p>This document outlines the operational protocols...</p>
+</div>
+"""
+
+st.components.v1.html(html_manual, height=600, scrolling=True)
 
 
 

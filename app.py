@@ -1,4 +1,7 @@
 import streamlit as st
+# Roztáhne aplikaci na celou šířku obrazovky
+st.set_page_config(layout="wide")
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 from prophet import Prophet

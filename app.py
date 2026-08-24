@@ -15,7 +15,18 @@ languages = [
     "English", "Čeština", "Slovenčina", "Deutsch", "Polski", 
     "Русский", "Français", "Español", "中文", "日本語", "हिन्दी", "العربية"
 ]
-lang = st.sidebar.selectbox("Choose language / Zvolte jazyk:", languages, label_visibility="collapsed")
+
+# Použijeme st.session_state, aby se jazyk správně a okamžitě proplétl celou aplikací
+if 'lang' not in st.session_state:
+    st.session_state.lang = "Čeština"
+
+lang = st.sidebar.selectbox(
+    "Choose language / Zvolte jazyk:", 
+    languages, 
+    index=languages.index(st.session_state.lang) if st.session_state.lang in languages else 0,
+    label_visibility="collapsed"
+)
+st.session_state.lang = lang
 
 st.sidebar.markdown("---")
 
@@ -155,10 +166,10 @@ translations = {
     }
 }
 
-# Aktivní sada překladů
-t = translations.get(lang, translations["English"])
+# Aktivní sada překladů podle aktuálně vybraného jazyka
+t = translations.get(st.session_state.lang, translations["English"])
 
-# Rolovací nabídka (menu) v postranním panelu
+# Rolovací nabídka (menu) v postranním panelu - nyní se překlad načte okamžitě
 selected_menu = st.sidebar.selectbox(
     label=t["menu_label"],
     options=t["menu_options"]

@@ -6,11 +6,41 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Page configuration (jediná správná inicializace na začátku)
+# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
-st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)")
-st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.")
+# --- LANGUAGE SELECTOR ---
+st.sidebar.markdown("### 🌍 Language / Jazyk")
+lang = st.sidebar.selectbox("Choose language / Zvolte jazyk:", ["English", "Čeština", "Slovenčina"], label_visibility="collapsed")
+
+# Text dictionary based on selected language
+if lang == "Čeština":
+    t_title = "🤖 Klondike AI Investment Scanner (Zprávy + Dav + AI učení)"
+    t_desc = "Tento nástroj analýzuje trhy, sleduje psychologii davu, predikuje ceny a učí se z minulých chyb pomocí databáze."
+    t_btn = "🚀 Spustit analýzu trhu a uložit predikce"
+    t_spinner = "Načítám data, spouštím AI a aktualizuji databázi..."
+    t_macro_warn = "⚠️ MAKRO VAROVÁNÍ: S&P 500 je pod svou 50denní klouzavou průměrnou hodnotou (Trh pod tlakem)."
+    t_macro_ok = "🌍 MAKRO STAV: S&P 500 je v pozitivním trendu."
+    t_macro_err = "🌍 Makro stav se nepodařilo ověřit."
+elif lang == "Slovenčina":
+    t_title = "🤖 Klondike AI Investment Scanner (Správy + Dav + AI učenie)"
+    t_desc = "Tento nástroj analyzuje trhy, sleduje psychológiu davu, predikuje ceny a učí sa z minulých chýb pomocou databáze."
+    t_btn = "🚀 Spustiť analýzu trhu a uložiť predikcie"
+    t_spinner = "Načítavam dáta, spúšťam AI a aktualizujem databázu..."
+    t_macro_warn = "⚠️ MAKRO VAROVANIE: S&P 500 je pod svojou 50-dňovou kĺzavou priemernou hodnotou (Trh pod tlakom)."
+    t_macro_ok = "🌍 MAKRO STAV: S&P 500 je v pozitívnom trende."
+    t_macro_err = "🌍 Makro stav sa nepodarilo overiť."
+else:
+    t_title = "🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)"
+    t_desc = "This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database."
+    t_btn = "🚀 Run Market Analysis & Save Predictions"
+    t_spinner = "Fetching data, running AI, and updating database..."
+    t_macro_warn = "⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (Market under pressure)."
+    t_macro_ok = "🌍 MACRO STATUS: S&P 500 is in a positive trend."
+    t_macro_err = "🌍 Macro status could not be verified."
+
+st.title(t_title)
+st.write(t_desc)
 
 # --- SUPABASE CONFIGURATION ---
 try:
@@ -73,8 +103,8 @@ def analyze_news_sentiment(ticker_obj):
         return "➖ (News unavailable)", "Error loading news"
 
 # Run Analysis Button
-if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
-    with st.spinner("Fetching data, running AI, and updating database..."):
+if st.button(t_btn, type="primary"):
+    with st.spinner(t_spinner):
         
         # Macro status
         try:
@@ -82,11 +112,11 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
             sp500_close = float(sp500['Close'].iloc[-1])
             sp500_sma50 = float(sp500['Close'].rolling(window=50).mean().iloc[-1])
             if sp500_close < sp500_sma50:
-                st.warning("⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (Market under pressure).")
+                st.warning(t_macro_warn)
             else:
-                st.success("🌍 MACRO STATUS: S&P 500 is in a positive trend.")
+                st.success(t_macro_ok)
         except:
-            st.info("🌍 Macro status could not be verified.")
+            st.info(t_macro_err)
 
         for ticker in TICKERS:
             with st.expander(f"Analysis for: {ticker}"):
@@ -156,11 +186,10 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                     future = model.make_future_dataframe(periods=PRED_DAYS)
                     forecast = model.predict(future)
 
-                    # Získání predikované ceny za 20 dní
                     predicted_price_20d = float(forecast.iloc[-1]['yhat'])
                     target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
 
-                    # Uložení predikce do Supabase databáze
+                    # Save prediction to Supabase database
                     if supabase:
                         try:
                             supabase.table("predictions").insert({
@@ -181,7 +210,7 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
 
-# HTML obsah manuálu
+# HTML documentation manual
 html_manual = """
 <!DOCTYPE html>
 <html lang="en">
@@ -240,12 +269,10 @@ html_manual = """
 """
 st.components.v1.html(html_manual, height=3800, scrolling=True)
 
-
 # --- DONATION / QR CODE SECTION ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")
 
-# Vložení QR kódu
 try:
     st.sidebar.image("qr_solana.png", width=180)
 except Exception:
@@ -255,36 +282,3 @@ st.sidebar.markdown(
     "<p style='font-size: 0.9em; color: gray;'>If this app entertains you or makes you money, buy me a coffee! ☕</p>", 
     unsafe_allow_html=True
 )
-
-# --- GOOGLE TRANSLATE WIDGET ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("🌍 Language / Jazyk")
-
-translate_html = """
-<div id="google_translate_element"></div>
-<script type="text/javascript">
-    function googleTranslateElementInit() {
-        new google.translate.TranslateElement({
-            pageLanguage: 'en',
-            includedLanguages: 'cs,sk,en,de',
-            layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-            autoDisplay: false
-        }, 'google_translate_element');
-    }
-</script>
-<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
-
-<style>
-    .goog-te-combo {
-        padding: 6px;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-        background-color: #f9f9f9;
-        font-family: sans-serif;
-        width: 100%;
-    }
-    .goog-te-banner-frame { display: none !important; }
-    body { top: 0 !important; }
-</style>
-"""
-st.sidebar.components.v1.html(translate_html, height=50)

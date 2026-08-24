@@ -25,10 +25,8 @@ except Exception as e:
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add Ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
-# Základní výchozí seznam tickerů
 DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "GLD", "BTC-USD", "VT", "^GSPC", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
 
-# Pokud uživatel zadá vlastní ticker, přidáme ho do seznamu pro analýzu
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
     active_tickers.insert(0, custom_ticker_input)
@@ -56,14 +54,12 @@ def calculate_atr(data, window=14):
     return float(atr.iloc[-1])
 
 def get_next_earnings_date(ticker_obj):
-    """Získá datum příštích earnings (Bod 2)"""
     try:
         cal = ticker_obj.calendar
         if cal is not None and isinstance(cal, dict) and 'Earnings Date' in cal:
             dates = cal['Earnings Date']
             if dates:
                 return pd.to_datetime(dates[0]).strftime('%Y-%m-%d')
-        # Alternativní pokus přes yfinance earnings_dates
         ed = ticker_obj.earnings_dates
         if ed is not None and not ed.empty:
             future_dates = ed[ed.index > pd.Timestamp.now()]
@@ -101,19 +97,15 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- HLAVNÍ NAVIGACE (Dashboard vs. AI Backtesting / Accuracy) ---
+# --- HLAVNÍ NAVIGACE ---
 app_mode = st.radio("Select View / Režim zobrazení:", ["📊 Market Scanner & Dashboard", "🧠 AI Accuracy & Backtesting History"], horizontal=True)
 
 if app_mode == "📊 Market Scanner & Dashboard":
-    # --- ROZDĚLENÍ OBRAZOVKY NA 2 SLOUPCE (Hlavní obsah vlevo, Insiders vpravo) ---
     col_main, col_insiders = st.columns([2.3, 1.2])
 
     with col_main:
-        # Run Analysis Button
-        if st.button("🚀 Run Analysis of Preset Markets & Save Predictions", type="primary"):
+        if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
             with st.spinner("Fetching data, running AI, and updating database..."):
-                
-                # Macro status
                 try:
                     sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                     sp500_close = float(sp500['Close'].iloc[-1])
@@ -145,7 +137,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             current_volume = float(data['Volume'].iloc[-1])
                             avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
                             
-                            # Crowd behavior logic
                             crowd_buying = current_volume > (avg_volume_30d * 2.0) and skutecna_cena > predchozi_cena
                             crowd_panicking = current_volume > (avg_volume_30d * 2.0) and skutecna_cena < predchozi_cena
                             is_bullish_trend = skutecna_cena > sma_200
@@ -155,7 +146,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                            # Verdict logic based on RSI and trend
                             if rsi_val < 35:
                                 verdict = "🟢 Verdict: OVERSOLD (ENTRY)"
                             elif rsi_val > 65:
@@ -163,7 +153,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             else:
                                 verdict = "🟡 Verdict: NEUTRAL (WAIT)"
 
-                            # Metrics display
                             col1, col2, col3 = st.columns(3)
                             col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
@@ -174,7 +163,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
                             st.write(f"**ATR Volatility:** {atr_val:.2f}")
                             
-                            # Earnings warning widget (Bod 2)
                             if next_earnings != "N/A":
                                 st.info(f"📅 **Next Earnings Date:** {next_earnings} (Expect higher volatility around this date!)")
                             else:
@@ -190,7 +178,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             trend_status = "✅ OK (Bullish vs SMA200)" if is_bullish_trend else "❌ Below SMA200 (Caution)"
                             st.write(f"**Long-term Trend:** {trend_status}")
 
-                            # Prophet prediction chart
                             df = data.reset_index()[['Date', 'Close']]
                             df.columns = ['ds', 'y']
                             df['ds'] = df['ds'].dt.tz_localize(None)
@@ -203,7 +190,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             predicted_price_20d = float(forecast.iloc[-1]['yhat'])
                             target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
 
-                            # Uložení predikce do Supabase databáze
                             if supabase:
                                 try:
                                     supabase.table("predictions").insert({
@@ -246,21 +232,19 @@ if app_mode == "📊 Market Scanner & Dashboard":
                     })
             except Exception:
                 pass
-
-if insider_data_list:
-        df_insiders = pd.DataFrame(insider_data_list)
-        # Výpočet výšky: např. 38 pixelů na jeden řádek + hlavička (cca 50px), 
-        # nebo zvolte pevnou velkou výšku (např. height=450)
-        table_height = len(df_insiders) * 38 + 50
-        
-        st.dataframe(
-            df_insiders, 
-            hide_index=True, 
-            use_container_width=True, 
-            height=table_height
-        )
-    else:
-        st.info("No fresh insider data available at the moment.")
+                
+        if insider_data_list:
+            df_insiders = pd.DataFrame(insider_data_list)
+            # Dynamická výška tabulky podle počtu řádků, aby se zamezilo posuvníkům
+            table_height = len(df_insiders) * 38 + 50
+            st.dataframe(
+                df_insiders, 
+                hide_index=True, 
+                use_container_width=True, 
+                height=table_height
+            )
+        else:
+            st.info("No fresh insider data available at the moment.")
 
 elif app_mode == "🧠 AI Accuracy & Backtesting History":
     st.subheader("🧠 AI Learning & Prediction History (Backtesting)")

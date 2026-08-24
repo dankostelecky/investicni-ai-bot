@@ -104,7 +104,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
     col_main, col_insiders = st.columns([2.3, 1.2])
 
     with col_main:
-        if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
+        if st.button("🚀 Run Analysis of Preset Markets & Save Predictions", type="primary"):
             with st.spinner("Fetching data, running AI, and updating database..."):
                 try:
                     sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)

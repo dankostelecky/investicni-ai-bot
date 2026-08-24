@@ -9,30 +9,14 @@ from supabase import create_client, Client
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
-# --- LANGUAGE & MENU SELECTOR ---
-st.sidebar.markdown("### 🌍 Language / Jazyk")
-languages = [
-    "English", "Čeština", "Slovenčina", "Deutsch", "Polski", 
-    "Русский", "Français", "Español", "中文", "日本語", "हिन्दी", "العربية"
-]
-
-# Použijeme st.session_state, aby se jazyk správně a okamžitě proplétl celou aplikací
+# --- SESSION STATE PRO JAZYK ---
 if 'lang' not in st.session_state:
     st.session_state.lang = "Čeština"
 
-lang = st.sidebar.selectbox(
-    "Choose language / Zvolte jazyk:", 
-    languages, 
-    index=languages.index(st.session_state.lang) if st.session_state.lang in languages else 0,
-    label_visibility="collapsed"
-)
-st.session_state.lang = lang
-
-st.sidebar.markdown("---")
-
-# Dictionary of translations for texts and menu options
+# --- JAZYKOVÝ SLOVNÍK ---
 translations = {
     "Čeština": {
+        "lang_name": "Čeština",
         "title": "🤖 Klondike AI Investment Scanner (Zprávy + Dav + AI učení)",
         "desc": "Tento nástroj analýzuje trhy, sleduje psychologii davu, predikuje ceny a učí se z minulých chyb pomocí databáze.",
         "btn": "🚀 Spustit analýzu trhu a uložit predikce",
@@ -40,10 +24,13 @@ translations = {
         "macro_warn": "⚠️ MAKRO VAROVÁNÍ: S&P 500 je pod svou 50denní klouzavou průměrnou hodnotou (Trh pod tlakem).",
         "macro_ok": "🌍 MAKRO STAV: S&P 500 je v pozitivním trendu.",
         "macro_err": "🌍 Makro stav se nepodařilo ověřit.",
-        "menu_label": "Vyberte sekci / možnost",
-        "menu_options": ["Hlavní panel / Dashboard", "Dokumentace a manuál", "O projektu / Podpora"]
+        "menu_label": "Navigace",
+        "menu_dashboard": "📊 Hlavní panel / Dashboard",
+        "menu_manual": "📖 Dokumentace a manuál",
+        "menu_support": "☕ O projektu / Podpora"
     },
     "Slovenčina": {
+        "lang_name": "Slovenčina",
         "title": "🤖 Klondike AI Investment Scanner (Správy + Dav + AI učenie)",
         "desc": "Tento nástroj analyzuje trhy, sleduje psychológiu davu, predikuje ceny a učí sa z minulých chýb pomocou databáze.",
         "btn": "🚀 Spustiť analýzu trhu a uložiť predikcie",
@@ -51,10 +38,13 @@ translations = {
         "macro_warn": "⚠️ MAKRO VAROVANIE: S&P 500 je pod svojou 50-dňovou kĺzavou priemernou hodnotou (Trh pod tlakom).",
         "macro_ok": "🌍 MAKRO STAV: S&P 500 je v pozitívnom trende.",
         "macro_err": "🌍 Makro stav sa nepodarilo overiť.",
-        "menu_label": "Vyberte sekciu / možnosť",
-        "menu_options": ["Hlavný panel / Dashboard", "Dokumentácia a manuál", "O projekte / Podpora"]
+        "menu_label": "Navigácia",
+        "menu_dashboard": "📊 Hlavný panel / Dashboard",
+        "menu_manual": "📖 Dokumentácia a manuál",
+        "menu_support": "☕ O projekte / Podpora"
     },
     "Deutsch": {
+        "lang_name": "Deutsch",
         "title": "🤖 Klondike AI Investment Scanner (Nachrichten + Crowd + KI-Lernen)",
         "desc": "Dieses Tool analysiert Märkte, verfolgt die Crowd-Psychologie, prognostiziert Preise und lernt aus vergangenen Fehlern.",
         "btn": "🚀 Marktanalyse starten & Vorhersagen speichern",
@@ -62,10 +52,13 @@ translations = {
         "macro_warn": "⚠️ MAKRO-WARNUNG: S&P 500 liegt unter dem 50-Tage-Durchschnitt (Markt unter Druck).",
         "macro_ok": "🌍 MAKRO-STATUS: S&P 500 ist in einem positiven Trend.",
         "macro_err": "🌍 Makro-Status konnte nicht überprüft werden.",
-        "menu_label": "Bereich auswählen",
-        "menu_options": ["Dashboard", "Dokumentation & Handbuch", "Über das Projekt / Support"]
+        "menu_label": "Navigation",
+        "menu_dashboard": "📊 Dashboard",
+        "menu_manual": "📖 Dokumentation & Handbuch",
+        "menu_support": "☕ Über das Projekt / Support"
     },
     "Polski": {
+        "lang_name": "Polski",
         "title": "🤖 Klondike AI Investment Scanner (Wiadomości + Tłum + Nauka AI)",
         "desc": "To narzędzie analizuje rynki, śledzi psychologię tłumu, prognozuje ceny i uczy się na błędach.",
         "btn": "🚀 Uruchom analizę rynku i zapisz prognozy",
@@ -73,10 +66,13 @@ translations = {
         "macro_warn": "⚠️ OSTRZEŻENIE MAKRO: S&P 500 jest poniżej 50-dniowej średniej (Rynek pod presją).",
         "macro_ok": "🌍 STATUS MAKRO: S&P 500 w trendzie wzrostowym.",
         "macro_err": "🌍 Nie udało się zweryfikować statusu makro.",
-        "menu_label": "Wybierz sekcję",
-        "menu_options": ["Panel główny / Dashboard", "Dokumentacja i podręcznik", "O projekcie / Wsparcie"]
+        "menu_label": "Nawigacja",
+        "menu_dashboard": "📊 Panel główny / Dashboard",
+        "menu_manual": "📖 Dokumentacja i podręcznik",
+        "menu_support": "☕ O projekcie / Wsparcie"
     },
     "Русский": {
+        "lang_name": "Русский",
         "title": "🤖 Klondike AI Investment Scanner (Новости + Толпа + ИИ Обучение)",
         "desc": "Этот инструмент анализирует рынки, отслеживает психологию толпы, прогнозирует цены и учится на ошибках.",
         "btn": "🚀 Запустить анализ рынка и сохранить прогнозы",
@@ -84,10 +80,13 @@ translations = {
         "macro_warn": "⚠️ МАКРОПРЕДУПРЕЖДЕНИЕ: S&P 500 ниже 50-дневной скользящей средней (Рынок под давлением).",
         "macro_ok": "🌍 МАКРОСТАТУС: S&P 500 в позитивном тренде.",
         "macro_err": "🌍 Не удалось проверить макростатус.",
-        "menu_label": "Выберите раздел",
-        "menu_options": ["Главная панель / Дашборд", "Документация и руководство", "О проекте / Поддержка"]
+        "menu_label": "Навигация",
+        "menu_dashboard": "📊 Главная панель / Дашборд",
+        "menu_manual": "📖 Документация и руководство",
+        "menu_support": "☕ О проекте / Поддержка"
     },
     "Français": {
+        "lang_name": "Français",
         "title": "🤖 Klondike AI Investment Scanner (Actualités + Foule + IA)",
         "desc": "Cet outil analyse les marchés, suit la psychologie des foules, prédit les prix et apprend de ses erreurs.",
         "btn": "🚀 Lancer l'analyse du marché et enregistrer",
@@ -95,10 +94,13 @@ translations = {
         "macro_warn": "⚠️ ALERTE MACRO : Le S&P 500 est sous sa moyenne mobile à 50 jours.",
         "macro_ok": "🌍 STATUT MACRO : Le S&P 500 est dans une tendance haussière.",
         "macro_err": "🌍 Impossible de vérifier le statut macro.",
-        "menu_label": "Sélectionner la section",
-        "menu_options": ["Tableau de bord", "Documentation & Manuel", "À propos / Support"]
+        "menu_label": "Navigation",
+        "menu_dashboard": "📊 Tableau de bord",
+        "menu_manual": "📖 Documentation & Manuel",
+        "menu_support": "☕ À propos / Support"
     },
     "Español": {
+        "lang_name": "Español",
         "title": "🤖 Klondike AI Investment Scanner (Noticias + Multitud + IA)",
         "desc": "Esta herramienta analiza mercados, rastrea la psicología de masas, predice precios y aprende de errores pasados.",
         "btn": "🚀 Ejecutar análisis de mercado y guardar predicciones",
@@ -106,10 +108,13 @@ translations = {
         "macro_warn": "⚠️ ADVERTENCIA MACRO: El S&P 500 está por debajo de su media de 50 días.",
         "macro_ok": "🌍 ESTADO MACRO: El S&P 500 está en tendencia positiva.",
         "macro_err": "🌍 No se pudo verificar el estado macro.",
-        "menu_label": "Seleccionar sección",
-        "menu_options": ["Panel principal / Dashboard", "Documentación y manual", "Acerca de / Soporte"]
+        "menu_label": "Navegación",
+        "menu_dashboard": "📊 Panel principal / Dashboard",
+        "menu_manual": "📖 Documentación y manual",
+        "menu_support": "☕ Acerca de / Soporte"
     },
     "中文": {
+        "lang_name": "中文",
         "title": "🤖 Klondike AI 投资扫描器 (新闻 + 群众心理 + AI学习)",
         "desc": "该工具分析市场、追踪群众心理、预测价格并通过数据库从过去的错误中学习。",
         "btn": "🚀 运行市场分析并保存预测",
@@ -117,10 +122,13 @@ translations = {
         "macro_warn": "⚠️ 宏观警告：标普500指数低于其50日均线（市场承压）。",
         "macro_ok": "🌍 宏观状态：标普500指数呈上升趋势。",
         "macro_err": "🌍 无法验证宏观状态。",
-        "menu_label": "选择部分",
-        "menu_options": ["主面板 / 仪表盘", "文档与手册", "关于项目 / 支持"]
+        "menu_label": "导航",
+        "menu_dashboard": "📊 主面板 / 仪表盘",
+        "menu_manual": "📖 文档与手册",
+        "menu_support": "☕ 关于项目 / 支持"
     },
     "日本語": {
+        "lang_name": "日本語",
         "title": "🤖 Klondike AI 投資スキャナー (ニュース + 群衆心理 + AI学習)",
         "desc": "このツールは市場を分析し、群衆心理を追跡し、価格を予測し、データベースから過去の失敗を学習します。",
         "btn": "🚀 市場分析を実行して予測を保存",
@@ -128,10 +136,13 @@ translations = {
         "macro_warn": "⚠️ マクロ警告: S&P 500 が 50 日移動平均を下回っています (市場に圧力)。",
         "macro_ok": "🌍 マクロステータス: S&P 500 は上昇トレンドです。",
         "macro_err": "🌍 マクロステータスを確認できませんでした。",
-        "menu_label": "セクションを選択",
-        "menu_options": ["ダッシュボード", "ドキュメント＆マニュアル", "プロジェクトについて / サポート"]
+        "menu_label": "ナビゲーション",
+        "menu_dashboard": "📊 ダッシュボード",
+        "menu_manual": "📖 ドキュメント＆マニュアル",
+        "menu_support": "☕ プロジェクトについて / サポート"
     },
     "हिन्दी": {
+        "lang_name": "हिन्दी",
         "title": "🤖 Klondike AI Investment Scanner (समाचार + भीड़ + AI लर्निंग)",
         "desc": "यह टूल बाजारों का विश्लेषण करता है, भीड़ के मनोविज्ञान को ट्रैक करता है, कीमतों की भविष्यवाणी करता है।",
         "btn": "🚀 बाज़ार विश्लेषण चलाएँ और भविष्यवाणियाँ सहेजें",
@@ -139,10 +150,13 @@ translations = {
         "macro_warn": "⚠️ मैक्रो चेतावनी: S&P 500 अपने 50-दिवसीय औसत से नीचे है।",
         "macro_ok": "🌍 मैक्रो स्थिति: S&P 500 सकारात्मक प्रवृत्ति में है।",
         "macro_err": "🌍 मैक्रो स्थिति सत्यापित नहीं की जा सकी।",
-        "menu_label": "खंड चुनें",
-        "menu_options": ["मुख्य पैनल / डैशबोर्ड", "दस्तावेज़ और मैनुअल", "प्रोजेक्ट के बारे में / सहायता"]
+        "menu_label": "नेविगेशन",
+        "menu_dashboard": "📊 मुख्य पैनल / डैशबोर्ड",
+        "menu_manual": "📖 दस्तावेज़ और मैनुअल",
+        "menu_support": "☕ प्रोजेक्ट के बारे में / सहायता"
     },
     "العربية": {
+        "lang_name": "العربية",
         "title": "🤖 Klondike AI Investment Scanner (أخبار + حشود + تعلم الذكاء الاصطناعي)",
         "desc": "تقوم هذه الأداة بتحليل الأسواق، تتبع نفسية الحشود، التنبؤ بالأسعار والتعلم من الأخطاء.",
         "btn": "🚀 تشغيل تحليل السوق وحفظ التوقعات",
@@ -150,10 +164,13 @@ translations = {
         "macro_warn": "⚠️ تحذير ماكرو: مؤشر S&P 500 أقل من متوسطه المتحرك لـ 50 يومًا.",
         "macro_ok": "🌍 حالة ماكرو: مؤشر S&P 500 في اتجاه إيجابي.",
         "macro_err": "🌍 تعذر التحقق من حالة ماكرو.",
-        "menu_label": "اختر القسم",
-        "menu_options": ["لوحة التحكم الرئيسية", "التوثيق والدليل", "حول المشروع / الدعم"]
+        "menu_label": "التنقل",
+        "menu_dashboard": "📊 لوحة التحكم الرئيسية",
+        "menu_manual": "📖 التوثيق والدليل",
+        "menu_support": "☕ حول المشروع / الدعم"
     },
     "English": {
+        "lang_name": "English",
         "title": "🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)",
         "desc": "This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.",
         "btn": "🚀 Run Market Analysis & Save Predictions",
@@ -161,20 +178,50 @@ translations = {
         "macro_warn": "⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (Market under pressure).",
         "macro_ok": "🌍 MACRO STATUS: S&P 500 is in a positive trend.",
         "macro_err": "🌍 Macro status could not be verified.",
-        "menu_label": "Select section",
-        "menu_options": ["Dashboard / Main", "Documentation & Manual", "About / Support"]
+        "menu_label": "Navigation",
+        "menu_dashboard": "📊 Dashboard / Main",
+        "menu_manual": "📖 Documentation & Manual",
+        "menu_support": "☕ About / Support"
     }
 }
 
-# Aktivní sada překladů podle aktuálně vybraného jazyka
-t = translations.get(st.session_state.lang, translations["English"])
+languages = list(translations.keys())
 
-# Rolovací nabídka (menu) v postranním panelu - nyní se překlad načte okamžitě
-selected_menu = st.sidebar.selectbox(
-    label=t["menu_label"],
-    options=t["menu_options"]
+# --- SIDEBAR: VÝBĚR JAZYKA ---
+st.sidebar.markdown("### 🌍 Language / Jazyk")
+selected_lang = st.sidebar.selectbox(
+    "Choose language / Zvolte jazyk:", 
+    languages, 
+    index=languages.index(st.session_state.lang),
+    label_visibility="collapsed",
+    key="lang_selector"
 )
 
+# Pokud se jazyk změnil, uložíme ho a vynutíme obnovení
+if selected_lang != st.session_state.lang:
+    st.session_state.lang = selected_lang
+    st.rerun()
+
+t = translations[st.session_state.lang]
+
+st.sidebar.markdown("---")
+
+# --- SIDEBAR: PŘEPÍNAČ SEKCÍ (RADIO MÍSTO SELECTBOXU - PŘEKLÁDÁ SE OKAMŽITĚ) ---
+st.sidebar.markdown(f"### {t['menu_label']}")
+menu_options_dict = {
+    t['menu_dashboard']: "dashboard",
+    t['menu_manual']: "manual",
+    t['menu_support']: "support"
+}
+
+selected_menu_label = st.sidebar.radio(
+    t['menu_label'],
+    list(menu_options_dict.keys()),
+    label_visibility="collapsed"
+)
+current_page = menu_options_dict[selected_menu_label]
+
+# --- HLAVNÍ NADPISY ---
 st.title(t["title"])
 st.write(t["desc"])
 
@@ -238,10 +285,9 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- ZOBRAZENÍ PODLE VYBRANÉHO MENU ---
+# --- VYKRESLENÍ OBSAHU PODLE VYBRANÉ SEKCE ---
 
-# 1. HLAVNÍ PANEL / DASHBOARD
-if selected_menu == t["menu_options"][0]:
+if current_page == "dashboard":
     # Run Analysis Button
     if st.button(t["btn"], type="primary"):
         with st.spinner(t["spinner"]):
@@ -350,8 +396,7 @@ if selected_menu == t["menu_options"][0]:
                     except Exception as e:
                         st.error(f"Error processing {ticker}: {e}")
 
-# 2. DOKUMENTACE A MANUÁL
-elif selected_menu == t["menu_options"][1]:
+elif current_page == "manual":
     html_manual = """
     <!DOCTYPE html>
     <html lang="en">
@@ -410,8 +455,7 @@ elif selected_menu == t["menu_options"][1]:
     """
     st.components.v1.html(html_manual, height=1200, scrolling=True)
 
-# 3. O PROJEKTU / PODPORA
-elif selected_menu == t["menu_options"][2]:
+elif current_page == "support":
     st.subheader("☕ Support the Creator - David_Seda")
 
     try:

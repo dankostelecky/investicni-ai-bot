@@ -248,7 +248,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
 
 elif app_mode == "🧠 AI Accuracy & Backtesting History":
     st.subheader("🧠 AI Learning & Prediction History (Backtesting)")
-    st.write("Tato sekce čte data z vaší Supabase databáze a porovnává minulé predikce s aktuálním vývojem trhu.")
+    st.write("This section reads data from the database and compares past predictions with current market developments.")
     
     if supabase:
         try:
@@ -258,9 +258,9 @@ elif app_mode == "🧠 AI Accuracy & Backtesting History":
             if data_rows:
                 df_preds = pd.DataFrame(data_rows)
                 st.dataframe(df_preds, use_container_width=True)
-                st.info("💡 Jakmile uplyne cílové datum (`target_date`), můžete zde sledovat, jak přesná byla předpověď umělé inteligence oproti reálné tržní ceně.")
+                st.info("💡 Once the target date (`target_date`), has passed, you can track how accurate the AI ​​prediction was compared to the real market price.")
             else:
-                st.warning("V databázi zatím nejsou uloženy žádné predikce. Spusťte prosím analýzu na hlavní stránce.")
+                st.warning("There are no predictions stored in the database yet. Please run the analysis on the main page.")
         except Exception as e:
             st.error(f"Nepodařilo se načíst historii z databáze: {e}")
     else:

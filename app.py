@@ -215,7 +215,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
         st.markdown("<p style='font-size: 0.9em; color: gray;'>Tracking recent insider activity for top equities.</p>", unsafe_allow_html=True)
         
         insider_data_list = []
-        insider_tickers = ["AAPL", "MSFT", "NVDA", "META", "GOOGL", "AMZN", "TSLA"]
+        insider_tickers = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD"]
         
         for t_sym in insider_tickers:
             try:

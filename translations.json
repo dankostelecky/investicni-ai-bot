@@ -1,0 +1,54 @@
+{
+  "Čeština": {
+    "title": "🤖 Klondike AI Investment Scanner (Zprávy + Dav + AI učení)",
+    "desc": "Tento nástroj analýzuje trhy, sleduje psychologii davu, predikuje ceny a učí se z minulých chyb pomocí databáze.",
+    "btn": "🚀 Spustit analýzu trhu a uložit predikce",
+    "spinner": "Načítám data, spouštím AI a aktualizuji databázi...",
+    "macro_warn": "⚠️ MAKRO VAROVÁNÍ: S&P 500 je pod svou 50denní klouzavou průměrnou hodnotou (Trh pod tlakem).",
+    "macro_ok": "🌍 MAKRO STAV: S&P 500 je v pozitivním trendu.",
+    "macro_err": "🌍 Makro stav se nepodařilo ověřit.",
+    "menu_label": "Navigace",
+    "menu_dashboard": "📊 Hlavní panel / Dashboard",
+    "menu_manual": "📖 Dokumentace a manuál",
+    "menu_support": "☕ O projektu / Podpora"
+  },
+  "English": {
+    "title": "🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)",
+    "desc": "This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database.",
+    "btn": "🚀 Run Market Analysis & Save Predictions",
+    "spinner": "Fetching data, running AI, and updating database...",
+    "macro_warn": "⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (Market under pressure).",
+    "macro_ok": "🌍 MACRO STATUS: S&P 500 is in a positive trend.",
+    "macro_err": "🌍 Macro status could not be verified.",
+    "menu_label": "Navigation",
+    "menu_dashboard": "📊 Dashboard / Main",
+    "menu_manual": "📖 Documentation & Manual",
+    "menu_support": "☕ About / Support"
+  },
+  "Deutsch": {
+    "title": "🤖 Klondike AI Investment Scanner (Nachrichten + Crowd + KI-Lernen)",
+    "desc": "Dieses Tool analysiert Märkte, verfolgt die Crowd-Psychologie, prognostiziert Preise und lernt aus vergangenen Fehlern.",
+    "btn": "🚀 Marktanalyse starten & Vorhersagen speichern",
+    "spinner": "Daten werden geladen, KI läuft und Datenbank wird aktualisiert...",
+    "macro_warn": "⚠️ MAKRO-WARNUNG: S&P 500 liegt unter dem 50-Tage-Durchschnitt (Markt unter Druck).",
+    "macro_ok": "🌍 MAKRO-STATUS: S&P 500 ist in einem positiven Trend.",
+    "macro_err": "🌍 Makro-Status konnte nicht überprüft werden.",
+    "menu_label": "Navigation",
+    "menu_dashboard": "📊 Dashboard",
+    "menu_manual": "📖 Dokumentation & Handbuch",
+    "menu_support": "☕ Über das Projekt / Support"
+  },
+  "Slovenčina": {
+    "title": "🤖 Klondike AI Investment Scanner (Správy + Dav + AI učenie)",
+    "desc": "Tento nástroj analyzuje trhy, sleduje psychológiu davu, predikuje ceny a učí sa z minulých chýb pomocou databáze.",
+    "btn": "🚀 Spustiť analýzu trhu a uložiť predikcie",
+    "spinner": "Načítavam dáta, spúšťam AI a aktualizujem databázu...",
+    "macro_warn": "⚠️ MAKRO VAROVANIE: S&P 500 je pod svojou 50-dňovou kĺzavou priemernou hodnotou (Trh pod tlakom).",
+    "macro_ok": "🌍 MAKRO STAV: S&P 500 je v pozitívnom trende.",
+    "macro_err": "🌍 Makro stav sa nepodařilo overiť.",
+    "menu_label": "Navigácia",
+    "menu_dashboard": "📊 Hlavný panel / Dashboard",
+    "menu_manual": "📖 Dokumentácia a manuál",
+    "menu_support": "☕ O projekte / Podpora"
+  }
+}

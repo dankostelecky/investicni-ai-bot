@@ -110,7 +110,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
 
     with col_main:
         # Run Analysis Button
-        if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
+        if st.button("🚀 Run Analysis of Preset Markets & Save Predictions", type="primary"):
             with st.spinner("Fetching data, running AI, and updating database..."):
                 
                 # Macro status

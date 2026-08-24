@@ -38,8 +38,13 @@ def load_translations():
 translations = load_translations()
 languages = list(translations.keys())
 
-# --- SESSION STATE PRO JAZYK ---
-if 'lang' not in st.session_state:
+# --- ČTENÍ JAZYKA Z URL (Klíčové pro spolehlivost uvnitř <iframe>) ---
+query_params = st.query_params
+url_lang = query_params.get("lang")
+
+if url_lang in languages:
+    st.session_state.lang = url_lang
+elif 'lang' not in st.session_state:
     st.session_state.lang = "Čeština" if "Čeština" in languages else languages[0]
 
 # --- SIDEBAR: VÝBĚR JAZYKA ---
@@ -52,9 +57,10 @@ selected_lang = st.sidebar.selectbox(
     key="lang_selector"
 )
 
-# Pokud se jazyk změnil, uložíme ho do stavu a vynutíme okamžitý refresh
+# Pokud se jazyk změnil, uložíme ho do URL a vynutíme okamžitý refresh
 if selected_lang != st.session_state.lang:
     st.session_state.lang = selected_lang
+    st.query_params["lang"] = selected_lang
     st.rerun()
 
 t = translations[st.session_state.lang]

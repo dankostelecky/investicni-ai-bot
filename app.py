@@ -11,7 +11,11 @@ st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout=
 
 # --- LANGUAGE SELECTOR ---
 st.sidebar.markdown("### 🌍 Language / Jazyk")
-lang = st.sidebar.selectbox("Choose language / Zvolte jazyk:", ["English", "Čeština", "Slovenčina"], label_visibility="collapsed")
+languages = [
+    "English", "Čeština", "Slovenčina", "Deutsch", "Polski", 
+    "Русский", "Français", "Español", "中文", "日本語", "हिन्दी", "العربية"
+]
+lang = st.sidebar.selectbox("Choose language / Zvolte jazyk:", languages, label_visibility="collapsed")
 
 # Text dictionary based on selected language
 if lang == "Čeština":
@@ -30,6 +34,78 @@ elif lang == "Slovenčina":
     t_macro_warn = "⚠️ MAKRO VAROVANIE: S&P 500 je pod svojou 50-dňovou kĺzavou priemernou hodnotou (Trh pod tlakom)."
     t_macro_ok = "🌍 MAKRO STAV: S&P 500 je v pozitívnom trende."
     t_macro_err = "🌍 Makro stav sa nepodarilo overiť."
+elif lang == "Deutsch":
+    t_title = "🤖 Klondike AI Investment Scanner (Nachrichten + Crowd + KI-Lernen)"
+    t_desc = "Dieses Tool analysiert Märkte, verfolgt die Crowd-Psychologie, prognostiziert Preise und lernt aus vergangenen Fehlern."
+    t_btn = "🚀 Marktanalyse starten & Vorhersagen speichern"
+    t_spinner = "Daten werden geladen, KI läuft und Datenbank wird aktualisiert..."
+    t_macro_warn = "⚠️ MAKRO-WARNUNG: S&P 500 liegt unter dem 50-Tage-Durchschnitt (Markt unter Druck)."
+    t_macro_ok = "🌍 MAKRO-STATUS: S&P 500 ist in einem positiven Trend."
+    t_macro_err = "🌍 Makro-Status konnte nicht überprüft werden."
+elif lang == "Polski":
+    t_title = "🤖 Klondike AI Investment Scanner (Wiadomości + Tłum + Nauka AI)"
+    t_desc = "To narzędzie analizuje rynki, śledzi psychologię tłumu, prognozuje ceny i uczy się na błędach."
+    t_btn = "🚀 Uruchom analizę rynku i zapisz prognozy"
+    t_spinner = "Pobieranie danych, uruchamianie AI i aktualizacja bazy danych..."
+    t_macro_warn = "⚠️ OSTRZEŻENIE MAKRO: S&P 500 jest poniżej 50-dniowej średniej (Rynek pod presją)."
+    t_macro_ok = "🌍 STATUS MAKRO: S&P 500 w trendzie wzrostowym."
+    t_macro_err = "🌍 Nie udało się zweryfikować statusu makro."
+elif lang == "Русский":
+    t_title = "🤖 Klondike AI Investment Scanner (Новости + Толпа + ИИ Обучение)"
+    t_desc = "Этот инструмент анализирует рынки, отслеживает психологию толпы, прогнозирует цены и учится на ошибках."
+    t_btn = "🚀 Запустить анализ рынка и сохранить прогнозы"
+    t_spinner = "Загрузка данных, запуск ИИ и обновление базы данных..."
+    t_macro_warn = "⚠️ МАКРОПРЕДУПРЕЖДЕНИЕ: S&P 500 ниже 50-дневной скользящей средней (Рынок под давлением)."
+    t_macro_ok = "🌍 МАКРОСТАТУС: S&P 500 в позитивном тренде."
+    t_macro_err = "🌍 Не удалось проверить макростатус."
+elif lang == "Français":
+    t_title = "🤖 Klondike AI Investment Scanner (Actualités + Foule + IA)"
+    t_desc = "Cet outil analyse les marchés, suit la psychologie des foules, prédit les prix et apprend de ses erreurs."
+    t_btn = "🚀 Lancer l'analyse du marché et enregistrer"
+    t_spinner = "Chargement des données, exécution de l'IA..."
+    t_macro_warn = "⚠️ ALERTE MACRO : Le S&P 500 est sous sa moyenne mobile à 50 jours."
+    t_macro_ok = "🌍 STATUT MACRO : Le S&P 500 est dans une tendance haussière."
+    t_macro_err = "🌍 Impossible de vérifier le statut macro."
+elif lang == "Español":
+    t_title = "🤖 Klondike AI Investment Scanner (Noticias + Multitud + IA)"
+    t_desc = "Esta herramienta analiza mercados, rastrea la psicología de masas, predice precios y aprende de errores pasados."
+    t_btn = "🚀 Ejecutar análisis de mercado y guardar predicciones"
+    t_spinner = "Cargando datos, ejecutando IA y actualizando base de datos..."
+    t_macro_warn = "⚠️ ADVERTENCIA MACRO: El S&P 500 está por debajo de su media de 50 días."
+    t_macro_ok = "🌍 ESTADO MACRO: El S&P 500 está en tendencia positiva."
+    t_macro_err = "🌍 No se pudo verificar el estado macro."
+elif lang == "中文":
+    t_title = "🤖 Klondike AI 投资扫描器 (新闻 + 群众心理 + AI学习)"
+    t_desc = "该工具分析市场、追踪群众心理、预测价格并通过数据库从过去的错误中学习。"
+    t_btn = "🚀 运行市场分析并保存预测"
+    t_spinner = "正在获取数据、运行AI并更新数据库..."
+    t_macro_warn = "⚠️ 宏观警告：标普500指数低于其50日均线（市场承压）。"
+    t_macro_ok = "🌍 宏观状态：标普500指数呈上升趋势。"
+    t_macro_err = "🌍 无法验证宏观状态。"
+elif lang == "日本語":
+    t_title = "🤖 Klondike AI 投資スキャナー (ニュース + 群衆心理 + AI学習)"
+    t_desc = "このツールは市場を分析し、群衆心理を追跡し、価格を予測し、データベースから過去の失敗を学習します。"
+    t_btn = "🚀 市場分析を実行して予測を保存"
+    t_spinner = "データ取得中、AI実行中、データベース更新中..."
+    t_macro_warn = "⚠️ マクロ警告: S&P 500 が 50 日移動平均を下回っています (市場に圧力)。"
+    t_macro_ok = "🌍 マクロステータス: S&P 500 は上昇トレンドです。"
+    t_macro_err = "🌍 マクロステータスを確認できませんでした。"
+elif lang == "हिन्दी":
+    t_title = "🤖 Klondike AI Investment Scanner (समाचार + भीड़ + AI लर्निंग)"
+    t_desc = "यह टूल बाजारों का विश्लेषण करता है, भीड़ के मनोविज्ञान को ट्रैक करता है, कीमतों की भविष्यवाणी करता है।"
+    t_btn = "🚀 बाज़ार विश्लेषण चलाएँ और भविष्यवाणियाँ सहेजें"
+    t_spinner = "डेटा प्राप्त किया जा रहा है, AI चल रहा है..."
+    t_macro_warn = "⚠️ मैक्रो चेतावनी: S&P 500 अपने 50-दिवसीय औसत से नीचे है।"
+    t_macro_ok = "🌍 मैक्रो स्थिति: S&P 500 सकारात्मक प्रवृत्ति में है।"
+    t_macro_err = "🌍 मैक्रो स्थिति सत्यापित नहीं की जा सकी।"
+elif lang == "العربية":
+    t_title = "🤖 Klondike AI Investment Scanner (أخبار + حشود + تعلم الذكاء الاصطناعي)"
+    t_desc = "تقوم هذه الأداة بتحليل الأسواق، تتبع نفسية الحشود، التنبؤ بالأسعار والتعلم من الأخطاء."
+    t_btn = "🚀 تشغيل تحليل السوق وحفظ التوقعات"
+    t_spinner = "جلب البيانات وتشغيل الذكاء الاصطناعي وتحديث قاعدة البيانات..."
+    t_macro_warn = "⚠️ تحذير ماكرو: مؤشر S&P 500 أقل من متوسطه المتحرك لـ 50 يومًا."
+    t_macro_ok = "🌍 حالة ماكرو: مؤشر S&P 500 في اتجاه إيجابي."
+    t_macro_err = "🌍 تعذر التحقق من حالة ماكرو."
 else:
     t_title = "🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)"
     t_desc = "This tool analyzes markets, tracks crowd psychology, predicts prices, and learns from its past mistakes using a database."

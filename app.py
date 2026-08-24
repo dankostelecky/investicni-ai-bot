@@ -246,12 +246,21 @@ if app_mode == "📊 Market Scanner & Dashboard":
                     })
             except Exception:
                 pass
-                
-        if insider_data_list:
-            df_insiders = pd.DataFrame(insider_data_list)
-            st.dataframe(df_insiders, hide_index=True, use_container_width=True)
-        else:
-            st.info("No fresh insider data available at the moment.")
+
+if insider_data_list:
+        df_insiders = pd.DataFrame(insider_data_list)
+        # Výpočet výšky: např. 38 pixelů na jeden řádek + hlavička (cca 50px), 
+        # nebo zvolte pevnou velkou výšku (např. height=450)
+        table_height = len(df_insiders) * 38 + 50
+        
+        st.dataframe(
+            df_insiders, 
+            hide_index=True, 
+            use_container_width=True, 
+            height=table_height
+        )
+    else:
+        st.info("No fresh insider data available at the moment.")
 
 elif app_mode == "🧠 AI Accuracy & Backtesting History":
     st.subheader("🧠 AI Learning & Prediction History (Backtesting)")

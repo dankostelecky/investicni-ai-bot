@@ -1,7 +1,4 @@
 import streamlit as st
-# Roztáhne aplikaci na celou šířku obrazovky
-st.set_page_config(layout="wide")
-import streamlit as st
 import yfinance as yf
 import pandas as pd
 from prophet import Prophet
@@ -9,7 +6,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Page configuration
+# Page configuration (jediná správná inicializace na začátku)
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
 st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning)")
@@ -184,9 +181,6 @@ if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
 
-
-
-
 # HTML obsah manuálu
 html_manual = """
 <!DOCTYPE html>
@@ -251,14 +245,46 @@ st.components.v1.html(html_manual, height=3800, scrolling=True)
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")
 
-# Vložení QR kódu (ujisti se, že soubor qr_solana.png je ve stejné složce)
+# Vložení QR kódu
 try:
     st.sidebar.image("qr_solana.png", width=180)
 except Exception:
     st.sidebar.info("📌 QR code image not found. Please add 'qr_solana.png' to the project folder.")
 
-# Anglický text podle tvého zadání
 st.sidebar.markdown(
     "<p style='font-size: 0.9em; color: gray;'>If this app entertains you or makes you money, buy me a coffee! ☕</p>", 
     unsafe_allow_html=True
 )
+
+# --- GOOGLE TRANSLATE WIDGET ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌍 Language / Jazyk")
+
+translate_html = """
+<div id="google_translate_element"></div>
+<script type="text/javascript">
+    function googleTranslateElementInit() {
+        new google.translate.TranslateElement({
+            pageLanguage: 'en',
+            includedLanguages: 'cs,sk,en,de',
+            layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+            autoDisplay: false
+        }, 'google_translate_element');
+    }
+</script>
+<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
+<style>
+    .goog-te-combo {
+        padding: 6px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        background-color: #f9f9f9;
+        font-family: sans-serif;
+        width: 100%;
+    }
+    .goog-te-banner-frame { display: none !important; }
+    body { top: 0 !important; }
+</style>
+"""
+st.sidebar.components.v1.html(translate_html, height=50)

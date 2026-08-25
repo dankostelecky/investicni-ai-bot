@@ -167,12 +167,12 @@ if app_mode == "📊 Market Scanner & Dashboard":
                                 ai_score -= 1
 
                             if ai_score > 0:
-                                quantitative_direction = "📈 RŮST (LONG)"
+                                quantitative_direction = "📈 PRICE INCREASE (LONG)"
                                 confidence = 75
                                 stop_loss = skutecna_cena - (1.5 * atr_val)
                                 take_profit = skutecna_cena + (2.5 * atr_val)
                             elif ai_score < 0:
-                                quantitative_direction = "📉 POKLES (SHORT)"
+                                quantitative_direction = "📉 PRICE DECREASE (SHORT)"
                                 confidence = 75
                                 stop_loss = skutecna_cena + (1.5 * atr_val)
                                 take_profit = skutecna_cena - (2.5 * atr_val)

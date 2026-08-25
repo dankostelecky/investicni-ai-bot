@@ -22,7 +22,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- PŘIDÁNÍ VLASTNÍHO TICKERU (Bod 4) ---
+# --- PŘIDÁNÍ VLASTNÍHO TICKERU ---
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add Ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
@@ -98,8 +98,41 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- HLAVNÍ NAVIGACE ---
-app_mode = st.radio("Select View / Režim zobrazení:", ["📊 Market Scanner & Dashboard", "🧠 AI Accuracy & Backtesting History"], horizontal=True)
+# --- FUNKCE PRO VYKRESLENÍ MANUÁLU ---
+def render_user_manual():
+    st.subheader("📘 Klondike AI Investment Scanner: User Guide")
+    st.markdown("Welcome to the beginner's guide for the Klondike AI Investment Scanner. This manual will help you navigate the app, understand the indicators, and manage your investments with the help of artificial intelligence.")
+
+    with st.expander("📖 1. How to Launch and Navigate the App"):
+        st.markdown("""
+        The application runs directly in your web browser and is divided into two main sections (which you can switch between using the top menu):
+        
+        1. **📊 Market Scanner & Dashboard (Main Overview):**
+           * This is where market analysis happens.
+           * In the left sidebar, type any ticker symbol into the **"Add Ticker"** field (e.g., `AAPL` for Apple, `TSLA` for Tesla, `NFLX` for Netflix) and press Enter. It will automatically be added to your active watchlist.
+           * Click the **🚀 Run Analysis...** button to let the app scan the markets, calculate key indicators, and display the results.
+        2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):**
+           * This section tracks past predictions, allowing you to review how accurate the artificial intelligence has been over time.
+        """)
+
+    with st.expander("📊 2. What Do the Indicators Mean?"):
+        st.markdown("""
+        * **📈 AI Quantitative Direction:** Based on moving averages and technical indicators like RSI, the AI evaluates the current market trend (`BULLISH`, `BEARISH`, or `NEUTRAL`).
+        * **🛡️ Risk Management (Stop Loss & Take Profit):** Automated risk management levels calculated using volatility (ATR) to help you limit losses and lock in gains.
+        * **📊 RSI (Relative Strength Index):** Measures whether an asset is overbought (above 65) or oversold (below 35) on a scale from 0 to 100.
+        * **📰 News Sentiment:** Scans latest financial headlines to determine whether the news tone is `BULLISH`, `BEARISH`, or `NEUTRAL`.
+        * **🔥 Crowd Alert:** Detects heavy buying pressure or sudden market sell-offs based on trading volumes.
+        """)
+
+    with st.expander("☕ 3. Support the Creator"):
+        st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section, where you can use a QR code to support the developer via a small cryptocurrency tip.")
+
+# --- HLAVNÍ NAVIGACE (ROZŠÍŘENA O MANUÁL) ---
+app_mode = st.radio("Select View / Režim zobrazení:", [
+    "📊 Market Scanner & Dashboard", 
+    "🧠 AI Accuracy & Backtesting History", 
+    "📘 User Manual"
+], horizontal=True)
 
 if app_mode == "📊 Market Scanner & Dashboard":
     col_main, col_insiders = st.columns([2.3, 1.2])
@@ -129,7 +162,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                                 st.error(f"Insufficient data for {ticker}")
                                 continue
 
-                            # Fix MultiIndex if returned by yfinance
                             if isinstance(data.columns, pd.MultiIndex):
                                 data.columns = data.columns.get_level_values(0)
 
@@ -167,12 +199,12 @@ if app_mode == "📊 Market Scanner & Dashboard":
                                 ai_score -= 1
 
                             if ai_score > 0:
-                                quantitative_direction = "📈 PRICE INCREASE (LONG)"
+                                quantitative_direction = "📈 RŮST (LONG)"
                                 confidence = 75
                                 stop_loss = skutecna_cena - (1.5 * atr_val)
                                 take_profit = skutecna_cena + (2.5 * atr_val)
                             elif ai_score < 0:
-                                quantitative_direction = "📉 PRICE DECREASE (SHORT)"
+                                quantitative_direction = "📉 POKLES (SHORT)"
                                 confidence = 75
                                 stop_loss = skutecna_cena + (1.5 * atr_val)
                                 take_profit = skutecna_cena - (2.5 * atr_val)
@@ -195,8 +227,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
                             st.markdown(f"### {verdict}")
-                            
-                            # Zobrazení nového AI / Kvantitativního odhadu
                             st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
                             
                             col_sl, col_tp = st.columns(2)
@@ -308,6 +338,9 @@ elif app_mode == "🧠 AI Accuracy & Backtesting History":
             st.error(f"Nepodařilo se načíst historii z databáze: {e}")
     else:
         st.error("Supabase není připojena.")
+
+elif app_mode == "📘 User Manual":
+    render_user_manual()
 
 # --- DONATION / QR CODE SECTION ---
 st.sidebar.markdown("---")

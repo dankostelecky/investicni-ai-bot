@@ -7,13 +7,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Page configuration
+# Nastavení stránky aplikace
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
 st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning + Custom Search)")
-st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, tracks earnings, and learns from its past mistakes using a database.")
+st.write("This application analyzes markets, tracks crowd psychology, calculates dual Long/Short scenarios, and learns from history using a database.")
 
-# --- SUPABASE CONFIGURATION ---
+# --- KONFIGURACE SUPABASE DATABÁZE ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -22,7 +22,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- PŘIDÁNÍ VLASTNÍHO TICKERU ---
+# --- PŘIDÁNÍ VLASTNÍHO TICKERU V BOČNÍM PANELU ---
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add Ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
@@ -35,6 +35,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 
 PRED_DAYS = 20
 
+# --- POMOCNÉ FUNKCE PRO VÝPOČET INDIKÁTORŮ ---
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -133,7 +134,7 @@ def render_user_manual():
         st.markdown("""
         The application runs directly in your web browser and is divided into main sections using the top menu:
         
-        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics.
+        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics with Dual Long/Short Trade Setups.
         2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):** Review past database predictions.
         3. **🏛️ Trump & Insider Trades:** Check disclosed financial portfolio tracking and official sources.
         4. **📘 User Manual:** Read guidance and descriptions.
@@ -141,8 +142,8 @@ def render_user_manual():
 
     with st.expander("📊 2. What Do the Indicators Mean?"):
         st.markdown("""
-        * **📈 AI Quantitative Direction:** Trend evaluation (`BULLISH`, `BEARISH`, `NEUTRAL`).
-        * **🛡️ Risk Management (Stop Loss & Take Profit):** Automated ATR volatility limits.
+        * **🟢 Long Scenario Setup:** Recommended ideal entry, stop loss, and take profit for buying/growth.
+        * **🔴 Short Scenario Setup:** Recommended ideal entry, stop loss, and take profit for shorting/decline.
         * **📊 RSI (Relative Strength Index):** Overbought (>65) / Oversold (<35) ranges.
         * **📰 News Sentiment:** Financial news evaluation.
         * **🔥 Crowd Alert:** Volume anomalies detection.
@@ -151,7 +152,7 @@ def render_user_manual():
     with st.expander("☕ 3. Support the Creator"):
         st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section.")
 
-# --- HLAVNÍ NAVIGACE ---
+# --- HLAVNÍ NAVIGACE APLIKACE ---
 app_mode = st.radio("Select View / Režim zobrazení:", [
     "📊 Market Scanner & Dashboard", 
     "🧠 AI Accuracy & Backtesting History", 
@@ -207,56 +208,46 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             is_bullish_trend = skutecna_cena > sma_200
 
                             vrchol_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
+                            dno_20d = float(data['Close'].rolling(window=20).min().iloc[-1])
                             rozdil_usd = vrchol_20d - skutecna_cena
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                            ai_score = 0
-                            if skutecna_cena > sma_50:
-                                ai_score += 1
-                            else:
-                                ai_score -= 1
+                            # --- VÝPOČET DVOJITÝCH SCÉNÁŘŮ (LONG VS. SHORT) ---
+                            # Long pozice (nákup / růst)
+                            long_entry = skutecna_cena
+                            long_stop_loss = skutecna_cena - (1.5 * atr_val)
+                            long_take_profit = skutecna_cena + (2.5 * atr_val)
 
-                            if rsi_val < 35:
-                                ai_score += 1
-                            elif rsi_val > 65:
-                                ai_score -= 1
-
-                            if ai_score > 0:
-                                quantitative_direction = "📈 RŮST (LONG)"
-                                confidence = 75
-                                stop_loss = skutecna_cena - (1.5 * atr_val)
-                                take_profit = skutecna_cena + (2.5 * atr_val)
-                            elif ai_score < 0:
-                                quantitative_direction = "📉 POKLES (SHORT)"
-                                confidence = 75
-                                stop_loss = skutecna_cena + (1.5 * atr_val)
-                                take_profit = skutecna_cena - (2.5 * atr_val)
-                            else:
-                                quantitative_direction = "⚖️ NEUTRÁLNÍ"
-                                confidence = 50
-                                stop_loss = skutecna_cena - (1.0 * atr_val)
-                                take_profit = skutecna_cena + (1.0 * atr_val)
-
-                            if rsi_val < 35:
-                                verdict = "🟢 Verdict: OVERSOLD (ENTRY)"
-                            elif rsi_val > 65:
-                                verdict = "🔴 Verdict: OVERBOUGHT (CAUTION)"
-                            else:
-                                verdict = "🟡 Verdict: NEUTRAL (WAIT)"
+                            # Short pozice (prodej / pokles)
+                            short_entry = skutecna_cena
+                            short_stop_loss = skutecna_cena + (1.5 * atr_val)
+                            short_take_profit = skutecna_cena - (2.5 * atr_val)
 
                             col1, col2, col3 = st.columns(3)
                             col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
                             col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
-                            st.markdown(f"### {verdict}")
-                            st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
-                            
-                            col_sl, col_tp = st.columns(2)
-                            col_sl.metric("🛡️ Recommended Stop Loss", f"${stop_loss:.2f}")
-                            col_tp.metric("🎯 Recommended Take Profit", f"${take_profit:.2f}")
+                            st.markdown("---")
+                            st.markdown("### 📊 Dual Trading Setups (Long vs. Short)")
 
+                            # Grafické oddělení pomocí sloupců pro Long a Short
+                            col_long, col_short = st.columns(2)
+
+                            with col_long:
+                                st.markdown("#### 🟢 LONG SETUP (Bullish Strategy)")
+                                st.success(f"**Ideal Entry:** ${long_entry:.2f}")
+                                st.metric("🛡️ Stop Loss (Long)", f"${long_stop_loss:.2f}")
+                                st.metric("🎯 Take Profit (Long)", f"${long_take_profit:.2f}")
+
+                            with col_short:
+                                st.markdown("#### 🔴 SHORT SETUP (Bearish Strategy)")
+                                st.error(f"**Ideal Entry:** ${short_entry:.2f}")
+                                st.metric("🛡️ Stop Loss (Short)", f"${short_stop_loss:.2f}")
+                                st.metric("🎯 Take Profit (Short)", f"${short_take_profit:.2f}")
+
+                            st.markdown("---")
                             st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
                             st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
                             st.write(f"**ATR Volatility:** {atr_val:.2f}")
@@ -359,9 +350,9 @@ elif app_mode == "🧠 AI Accuracy & Backtesting History":
             else:
                 st.warning("There are no predictions stored in the database yet. Please run the analysis on the main page.")
         except Exception as e:
-            st.error(f"Nepodařilo se načíst historii z databáze: {e}")
+            st.error(f"Failed to load history from database: {e}")
     else:
-        st.error("Supabase není připojena.")
+        st.error("Supabase is not connected.")
 
 elif app_mode == "🏛️ Trump & Insider Trades":
     render_trump_and_political_trades()
@@ -369,7 +360,7 @@ elif app_mode == "🏛️ Trump & Insider Trades":
 elif app_mode == "📘 User Manual":
     render_user_manual()
 
-# --- DONATION / QR CODE SECTION ---
+# --- SEKCE PRO PODPORU TVŮRCE (QR KÓD V BOČNÍM PANELU) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")
 

@@ -7,13 +7,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Nastavení stránky aplikace
+# Page configuration
 st.set_page_config(page_title="AI Investment Scanner", page_icon="🤖", layout="wide")
 
 st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning + Custom Search)")
-st.write("This application analyzes markets, tracks crowd psychology, calculates dual Long/Short scenarios, and learns from history using a database.")
+st.write("This tool analyzes markets, tracks crowd psychology, predicts prices, tracks earnings, and learns from its past mistakes using a database.")
 
-# --- KONFIGURACE SUPABASE DATABÁZE ---
+# --- SUPABASE CONFIGURATION ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -22,7 +22,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- PŘIDÁNÍ VLASTNÍHO TICKERU V BOČNÍM PANELU ---
+# --- PŘIDÁNÍ VLASTNÍHO TICKERU ---
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add Ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
@@ -35,7 +35,6 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 
 PRED_DAYS = 20
 
-# --- POMOCNÉ FUNKCE PRO VÝPOČET INDIKÁTORŮ ---
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -99,65 +98,39 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- SEKCE PRO TRUMPOVY NÁKUPY A ODKAZY ---
-def render_trump_and_political_trades():
-    st.subheader("🏛️ Donald Trump & Family Stock Disclosures")
-    st.write("Overview of major tracked transactions and disclosures reported in official government ethics filings.")
-
-    trump_data = [
-        {"Date": "2026-06-18", "Asset": "Berkshire Hathaway (BRK-B)", "Type": "Purchase", "Estimated Value": "$1M - $5M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-23", "Asset": "Visa Inc (V)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-24", "Asset": "Mastercard (MA)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-03", "Asset": "Palantir (PLTR)", "Type": "Purchase/Sale", "Estimated Value": "$15K - $50K", "Status": "Rotated / Traded"},
-        {"Date": "2025-04-08", "Asset": "Big Tech Basket (AAPL, MSFT, GOOGL)", "Type": "Large Purchase", "Estimated Value": "$12.8M total", "Status": "Core Holding"}
-    ]
-    
-    df_trump = pd.DataFrame(trump_data)
-    st.dataframe(df_trump, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### 🔗 Official Sources & Public Disclosures (Free Access)")
-    st.write("You can verify all asset records and raw documentation directly through official public registries:")
-    
-    st.markdown("- 🇺🇸 [U.S. Office of Government Ethics (OGE) Official Search](https://www.oge.gov/web/oge.nsf/Officials%20Individual%20Disclosures%20Search%20Collection?OpenForm)")
-    st.markdown("- 📊 [ProPublica Trump & Appointees Financial Disclosures Database](https://projects.propublica.org/trump-team-financial-disclosures/)")
-    st.markdown("- 🏛️ [U.S. Senate Electronic Financial Disclosure (eFD) System](https://efd.senate.gov/)")
-
-    st.info("💡 Tip: You can copy any ticker from the table above (e.g., `BRK-B`, `V`) and paste it into the **Custom Asset Search** sidebar on the main screen to analyze its current technical indicators and AI outlook.")
-
-# --- UŽIVATELSKÝ MANUÁL ---
+# --- FUNKCE PRO VYKRESLENÍ MANUÁLU ---
 def render_user_manual():
     st.subheader("📘 Klondike AI Investment Scanner: User Guide")
     st.markdown("Welcome to the beginner's guide for the Klondike AI Investment Scanner. This manual will help you navigate the app, understand the indicators, and manage your investments with the help of artificial intelligence.")
 
     with st.expander("📖 1. How to Launch and Navigate the App"):
         st.markdown("""
-        The application runs directly in your web browser and is divided into main sections using the top menu:
+        The application runs directly in your web browser and is divided into two main sections (which you can switch between using the top menu):
         
-        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics with Trend Outlook & Dual Long/Short Trade Setups.
-        2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):** Review past database predictions.
-        3. **🏛️ Trump & Insider Trades:** Check disclosed financial portfolio tracking and official sources.
-        4. **📘 User Manual:** Read guidance and descriptions.
+        1. **📊 Market Scanner & Dashboard (Main Overview):**
+            * This is where market analysis happens.
+            * In the left sidebar, type any ticker symbol into the **"Add Ticker"** field (e.g., `AAPL` for Apple, `TSLA` for Tesla, `NFLX` for Netflix) and press Enter. It will automatically be added to your active watchlist.
+            * Click the **🚀 Run Analysis...** button to let the app scan the markets, calculate key indicators, and display the results.
+        2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):**
+            * This section tracks past predictions, allowing you to review how accurate the artificial intelligence has been over time.
         """)
 
     with st.expander("📊 2. What Do the Indicators Mean?"):
         st.markdown("""
-        * **📈 AI Quantitative Direction:** Trend evaluation and projected price direction (`BULLISH`, `BEARISH`, `NEUTRAL`).
-        * **🟢 Long Setup:** Recommended ideal entry, stop loss, and take profit for buying/growth.
-        * **🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit for shorting/decline.
-        * **📊 RSI (Relative Strength Index):** Overbought (>65) / Oversold (<35) ranges.
-        * **📰 News Sentiment:** Financial news evaluation.
-        * **🔥 Crowd Alert:** Volume anomalies detection.
+        * **📈 AI Quantitative Direction:** Based on moving averages and technical indicators like RSI, the AI evaluates the current market trend (`BULLISH`, `BEARISH`, or `NEUTRAL`).
+        * **🛡️ Risk Management (Stop Loss & Take Profit):** Automated risk management levels calculated using volatility (ATR) to help you limit losses and lock in gains.
+        * **📊 RSI (Relative Strength Index):** Measures whether an asset is overbought (above 65) or oversold (below 35) on a scale from 0 to 100.
+        * **📰 News Sentiment:** Scans latest financial headlines to determine whether the news tone is `BULLISH`, `BEARISH`, or `NEUTRAL`.
+        * **🔥 Crowd Alert:** Detects heavy buying pressure or sudden market sell-offs based on trading volumes.
         """)
 
     with st.expander("☕ 3. Support the Creator"):
-        st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section.")
+        st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section, where you can use a QR code to support the developer via a small cryptocurrency tip.")
 
-# --- HLAVNÍ NAVIGACE APLIKACE ---
+# --- HLAVNÍ NAVIGACE (ROZŠÍŘENA O MANUÁL) ---
 app_mode = st.radio("Select View / Režim zobrazení:", [
     "📊 Market Scanner & Dashboard", 
     "🧠 AI Accuracy & Backtesting History", 
-    "🏛️ Trump & Insider Trades",
     "📘 User Manual"
 ], horizontal=True)
 
@@ -213,7 +186,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                            # --- VÝPOČET AI SKÓRE A SMĚŘOVÁNÍ CENY ---
+                            # --- AI / KVANTITATIVNÍ ODHAD SMĚRU A SL/TP ---
                             ai_score = 0
                             if skutecna_cena > sma_50:
                                 ai_score += 1
@@ -226,52 +199,40 @@ if app_mode == "📊 Market Scanner & Dashboard":
                                 ai_score -= 1
 
                             if ai_score > 0:
-                                quantitative_direction = "📈 BULLISH (UPWARD TREND)"
+                                quantitative_direction = "📈 RŮST (LONG)"
                                 confidence = 75
+                                stop_loss = skutecna_cena - (1.5 * atr_val)
+                                take_profit = skutecna_cena + (2.5 * atr_val)
                             elif ai_score < 0:
-                                quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
+                                quantitative_direction = "📉 POKLES (SHORT)"
                                 confidence = 75
+                                stop_loss = skutecna_cena + (1.5 * atr_val)
+                                take_profit = skutecna_cena - (2.5 * atr_val)
                             else:
-                                quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
+                                quantitative_direction = "⚖️ NEUTRÁLNÍ"
                                 confidence = 50
+                                stop_loss = skutecna_cena - (1.0 * atr_val)
+                                take_profit = skutecna_cena + (1.0 * atr_val)
 
-                            # --- VÝPOČET DVOJITÝCH SCÉNÁŘŮ (LONG VS. SHORT) ---
-                            # Long pozice (nákup / růst)
-                            long_entry = skutecna_cena
-                            long_stop_loss = skutecna_cena - (1.5 * atr_val)
-                            long_take_profit = skutecna_cena + (2.5 * atr_val)
-
-                            # Short pozice (prodej / pokles)
-                            short_entry = skutecna_cena
-                            short_stop_loss = skutecna_cena + (1.5 * atr_val)
-                            short_take_profit = skutecna_cena - (2.5 * atr_val)
+                            if rsi_val < 35:
+                                verdict = "🟢 Verdict: OVERSOLD (ENTRY)"
+                            elif rsi_val > 65:
+                                verdict = "🔴 Verdict: OVERBOUGHT (CAUTION)"
+                            else:
+                                verdict = "🟡 Verdict: NEUTRAL (WAIT)"
 
                             col1, col2, col3 = st.columns(3)
                             col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
                             col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
-                            # Zobrazení odhadovaného směřování ceny
-                            st.markdown("---")
+                            st.markdown(f"### {verdict}")
                             st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
+                            
+                            col_sl, col_tp = st.columns(2)
+                            col_sl.metric("🛡️ Recommended Stop Loss", f"${stop_loss:.2f}")
+                            col_tp.metric("🎯 Recommended Take Profit", f"${take_profit:.2f}")
 
-                            # Grafické oddělení pomocí sloupců pro Long a Short setupy
-                            st.markdown(" ")
-                            col_long, col_short = st.columns(2)
-
-                            with col_long:
-                                st.markdown("#### 🟢 LONG SETUP (Bullish Strategy)")
-                                st.success(f"**Ideal Entry:** ${long_entry:.2f}")
-                                st.metric("🛡️ Stop Loss (Long)", f"${long_stop_loss:.2f}")
-                                st.metric("🎯 Take Profit (Long)", f"${long_take_profit:.2f}")
-
-                            with col_short:
-                                st.markdown("#### 🔴 SHORT SETUP (Bearish Strategy)")
-                                st.error(f"**Ideal Entry:** ${short_entry:.2f}")
-                                st.metric("🛡️ Stop Loss (Short)", f"${short_stop_loss:.2f}")
-                                st.metric("🎯 Take Profit (Short)", f"${short_take_profit:.2f}")
-
-                            st.markdown("---")
                             st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
                             st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
                             st.write(f"**ATR Volatility:** {atr_val:.2f}")
@@ -374,17 +335,14 @@ elif app_mode == "🧠 AI Accuracy & Backtesting History":
             else:
                 st.warning("There are no predictions stored in the database yet. Please run the analysis on the main page.")
         except Exception as e:
-            st.error(f"Failed to load history from database: {e}")
+            st.error(f"Nepodařilo se načíst historii z databáze: {e}")
     else:
-        st.error("Supabase is not connected.")
-
-elif app_mode == "🏛️ Trump & Insider Trades":
-    render_trump_and_political_trades()
+        st.error("Supabase není připojena.")
 
 elif app_mode == "📘 User Manual":
     render_user_manual()
 
-# --- SEKCE PRO PODPORU TVŮRCE (QR KÓD V BOČNÍM PANELU) ---
+# --- DONATION / QR CODE SECTION ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")
 

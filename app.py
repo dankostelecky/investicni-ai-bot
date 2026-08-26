@@ -134,7 +134,7 @@ def render_user_manual():
         st.markdown("""
         The application runs directly in your web browser and is divided into main sections using the top menu:
         
-        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics with Dual Long/Short Trade Setups.
+        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics with Trend Outlook & Dual Long/Short Trade Setups.
         2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):** Review past database predictions.
         3. **🏛️ Trump & Insider Trades:** Check disclosed financial portfolio tracking and official sources.
         4. **📘 User Manual:** Read guidance and descriptions.
@@ -142,8 +142,9 @@ def render_user_manual():
 
     with st.expander("📊 2. What Do the Indicators Mean?"):
         st.markdown("""
-        * **🟢 Long Scenario Setup:** Recommended ideal entry, stop loss, and take profit for buying/growth.
-        * **🔴 Short Scenario Setup:** Recommended ideal entry, stop loss, and take profit for shorting/decline.
+        * **📈 AI Quantitative Direction:** Trend evaluation and projected price direction (`BULLISH`, `BEARISH`, `NEUTRAL`).
+        * **🟢 Long Setup:** Recommended ideal entry, stop loss, and take profit for buying/growth.
+        * **🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit for shorting/decline.
         * **📊 RSI (Relative Strength Index):** Overbought (>65) / Oversold (<35) ranges.
         * **📰 News Sentiment:** Financial news evaluation.
         * **🔥 Crowd Alert:** Volume anomalies detection.
@@ -208,10 +209,31 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             is_bullish_trend = skutecna_cena > sma_200
 
                             vrchol_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
-                            dno_20d = float(data['Close'].rolling(window=20).min().iloc[-1])
                             rozdil_usd = vrchol_20d - skutecna_cena
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
+
+                            # --- VÝPOČET AI SKÓRE A SMĚŘOVÁNÍ CENY ---
+                            ai_score = 0
+                            if skutecna_cena > sma_50:
+                                ai_score += 1
+                            else:
+                                ai_score -= 1
+
+                            if rsi_val < 35:
+                                ai_score += 1
+                            elif rsi_val > 65:
+                                ai_score -= 1
+
+                            if ai_score > 0:
+                                quantitative_direction = "📈 BULLISH (UPWARD TREND)"
+                                confidence = 75
+                            elif ai_score < 0:
+                                quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
+                                confidence = 75
+                            else:
+                                quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
+                                confidence = 50
 
                             # --- VÝPOČET DVOJITÝCH SCÉNÁŘŮ (LONG VS. SHORT) ---
                             # Long pozice (nákup / růst)
@@ -229,10 +251,12 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
                             col3.metric("Profit / $1 Invested", f"+{zisk_na_1_usd:.2f} USD")
 
+                            # Zobrazení odhadovaného směřování ceny
                             st.markdown("---")
-                            st.markdown("### 📊 Dual Trading Setups (Long vs. Short)")
+                            st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
 
-                            # Grafické oddělení pomocí sloupců pro Long a Short
+                            # Grafické oddělení pomocí sloupců pro Long a Short setupy
+                            st.markdown("### 📊 Dual Trading Setups (Long vs. Short)")
                             col_long, col_short = st.columns(2)
 
                             with col_long:

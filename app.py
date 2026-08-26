@@ -256,8 +256,7 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
 
                             # Grafické oddělení pomocí sloupců pro Long a Short setupy
-                            st.markdown("### 📊 Dual Trading Setups (Long vs. Short)")
-                            col_long, col_short = st.columns(2)
+                         
 
                             with col_long:
                                 st.markdown("#### 🟢 LONG SETUP (Bullish Strategy)")

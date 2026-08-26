@@ -7,35 +7,35 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Nastavení stránky aplikace
+# Page configuration
 st.set_page_config(page_title="Klondike AI Investment Scanner", page_icon="🤖", layout="wide")
 
 st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning + Custom Search)")
-st.write("Tato aplikace analyzuje trhy, sleduje psychologii davu, počítá duální Long/Short scénáře a učí se z historie pomocí databáze.")
+st.write("This application analyzes markets, monitors crowd psychology, calculates dual Long/Short scenarios, and learns from history using a database.")
 
-# --- KONFIGURACE SUPABASE DATABÁZE ---
+# --- SUPABASE DATABASE CONFIGURATION ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     supabase = None
-    st.sidebar.warning(f"⚠️ Databáze není připojena: {e}")
+    st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- PŘIDÁNÍ VLASTNÍHO TICKERU V BOČNÍM PANELU ---
-st.sidebar.markdown("### 🔍 Vlastní vyhledávání aktiv")
-custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. NFLX, AAPL, CZG.PR):", "").upper().strip()
+# --- CUSTOM TICKER SEARCH IN SIDEBAR ---
+st.sidebar.markdown("### 🔍 Custom Asset Search")
+custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
 DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "GLD", "BTC-USD", "VT", "^GSPC", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
 
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
     active_tickers.insert(0, custom_ticker_input)
-    st.sidebar.success(f"Přidáno {custom_ticker_input} do seznamu skenování!")
+    st.sidebar.success(f"Added {custom_ticker_input} to scanning list!")
 
 PRED_DAYS = 20
 
-# --- POMOCNÉ FUNKCE PRO VÝPOČET INDIKÁTORŮ ---
+# --- HELPER FUNCTIONS FOR INDICATORS ---
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -75,17 +75,17 @@ def analyze_news_sentiment(ticker_obj):
     try:
         news = getattr(ticker_obj, 'news', None)
         if not news:
-            return "➖ (Žádné čerstvé zprávy)", "Dostupné titulky nenalezeny"
+            return "➖ (No fresh news)", "Available headlines not found"
         
-        bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss", "pád", "pokles", "ztráta"]
-        bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain", "růst", "rekord", "zisk"]
+        bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss"]
+        bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain"]
         
         score = 0
-        latest_headline = "Neznámý titulek"
+        latest_headline = "Unknown headline"
         
         for item in news[:5]:
             title = item.get('title', '') if isinstance(item, dict) else getattr(item, 'title', '')
-            if latest_headline == "Neznámý titulek" and title:
+            if latest_headline == "Unknown headline" and title:
                 latest_headline = title
             title_lower = title.lower()
             for kw in bullish_keywords:
@@ -97,76 +97,76 @@ def analyze_news_sentiment(ticker_obj):
         elif score < 0: return "📉 BEARISH", latest_headline
         else: return "➖ NEUTRAL", latest_headline
     except Exception:
-        return "➖ (Zprávy nedostupné)", "Chyba při načítání zpráv"
+        return "➖ (News unavailable)", "Error loading news"
 
-# --- SEKCE PRO TRUMPOVY NÁKUPY A ODKAZY ---
+# --- TRUMP AND POLITICAL TRADES SECTION ---
 def render_trump_and_political_trades():
-    st.subheader("🏛️ Donald Trump & Rodinné majetkové transakce")
-    st.write("Přehled sledovaných transakcí a majetkových přiznání nahlášených v oficiálních vládních registrech.")
+    st.subheader("🏛️ Donald Trump & Family Asset Transactions")
+    st.write("Overview of tracked transactions and asset disclosures reported in official government registries.")
 
     trump_data = [
-        {"Date": "2026-06-18", "Asset": "Berkshire Hathaway (BRK-B)", "Type": "Nákup", "Estimated Value": "$1M - $5M", "Status": "Aktivní portfólio"},
-        {"Date": "2026-06-23", "Asset": "Visa Inc (V)", "Type": "Nákup", "Estimated Value": "$500K - $1M", "Status": "Aktivní portfólio"},
-        {"Date": "2026-06-24", "Asset": "Mastercard (MA)", "Type": "Nákup", "Estimated Value": "$500K - $1M", "Status": "Aktivní portfólio"},
-        {"Date": "2026-06-03", "Asset": "Palantir (PLTR)", "Type": "Nákup/Prodej", "Estimated Value": "$15K - $50K", "Status": "Rotováno / Obchodováno"},
-        {"Date": "2025-04-08", "Asset": "Big Tech Basket (AAPL, MSFT, GOOGL)", "Type": "Velký nákup", "Estimated Value": "$12.8M celkem", "Status": "Hlavní držení"}
+        {"Date": "2026-06-18", "Asset": "Berkshire Hathaway (BRK-B)", "Type": "Purchase", "Estimated Value": "$1M - $5M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-23", "Asset": "Visa Inc (V)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-24", "Asset": "Mastercard (MA)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-03", "Asset": "Palantir (PLTR)", "Type": "Buy/Sell", "Estimated Value": "$15K - $50K", "Status": "Rotated / Traded"},
+        {"Date": "2025-04-08", "Asset": "Big Tech Basket (AAPL, MSFT, GOOGL)", "Type": "Large Purchase", "Estimated Value": "$12.8M total", "Status": "Core Holding"}
     ]
     
     df_trump = pd.DataFrame(trump_data)
     st.dataframe(df_trump, use_container_width=True)
     
     st.markdown("---")
-    st.markdown("### 🔗 Oficiální zdroje a veřejná přiznání (Volný přístup)")
-    st.write("Všechny záznamy aktiv a zdrojové dokumenty můžete ověřit přímo v oficiálních registrech:")
+    st.markdown("### 🔗 Official Sources & Public Disclosures (Free Access)")
+    st.write("You can verify all asset records and source documents directly in official registries:")
     
     st.markdown("- 🇺🇸 [U.S. Office of Government Ethics (OGE) Official Search](https://www.oge.gov/web/oge.nsf/Officials%20Individual%20Disclosures%20Search%20Collection?OpenForm)")
     st.markdown("- 📊 [ProPublica Trump & Appointees Financial Disclosures Database](https://projects.propublica.org/trump-team-financial-disclosures/)")
     st.markdown("- 🏛️ [U.S. Senate Electronic Financial Disclosure (eFD) System](https://efd.senate.gov/)")
 
-    st.info("💡 Tip: Můžete zkopírovat jakýkoliv ticker z tabulky výše (např. `BRK-B`, `V`) a vložit jej do bočního panelu **Vlastní vyhledávání aktiv** k analýze aktuálních technických indikátorů a AI výhledu.")
+    st.info("💡 Tip: You can copy any ticker from the table above (e.g., `BRK-B`, `V`) and paste it into the **Custom Asset Search** sidebar to analyze current technical indicators and AI outlook.")
 
-# --- UŽIVATELSKÝ MANUÁL ---
+# --- USER MANUAL ---
 def render_user_manual():
-    st.subheader("📘 Klondike AI Investment Scanner: Uživatelský manuál")
-    st.markdown("Vítejte v průvodci pro aplikaci Klondike AI Investment Scanner. Tento manuál vám pomůže zorientovat se v rozhraní, indikátorech a správě investic.")
+    st.subheader("📘 Klondike AI Investment Scanner: User Manual")
+    st.markdown("Welcome to the guide for Klondike AI Investment Scanner. This manual will help you navigate the interface, indicators, and investment management.")
 
-    with st.expander("📖 1. Jak spustit a ovládat aplikaci"):
+    with st.expander("📖 1. How to Launch and Control the App"):
         st.markdown("""
-        Aplikace běží přímo ve webovém prohlížeči a je rozdělená do hlavních sekcí pomocí horního menu:
+        The application runs directly in your web browser and is split into main sections via the top menu:
         
-        1. **📊 Skenování trhů a přehled:** Skenujte trhy, přidejte vlastní tickery v postranním panelu a spusťte AI analýzu včetně výhledu trendu, obchodních nastavení Long/Short a **konkrétní investiční rady (Vstoupit / Čekat)**.
-        2. **🧠 AI přesnost a historie (Backtesting):** Zkontrolujte historické predikce uložené v databázi.
-        3. **🏛️ Trump & Insider obchody:** Sledujte politické a insider transakce.
-        4. **📘 Uživatelský manuál:** Přečtěte si nápovědu a popis funkcí.
+        1. **📊 Market Scanning & Overview:** Scan markets, add custom tickers in the sidebar, and run AI analysis including trend outlooks, Long/Short trading setups, and **direct investment advice (Enter / Wait)**.
+        2. **🧠 AI Accuracy & History (Backtesting):** Check historical predictions saved in the database.
+        3. **🏛️ Trump & Insider Trades:** Track political and insider transactions.
+        4. **📘 User Manual:** Read help and feature descriptions.
         """)
 
-    with st.expander("📊 2. Co znamenají jednotlivé indikátory?"):
+    with st.expander("📊 2. What Do the Indicators Mean?"):
         st.markdown("""
-        * **📈 AI Kvantitativní směr:** Vyhodnocení trendu a predikce směru ceny (`BULLISH`, `BEARISH`, `NEUTRAL`).
-        * **💡 Investiční doporučení:** Okamžitá rada jestli **vstoupit** (ideální nákupní zóna/přeprodáno), **čekat** (trh je překoupený nebo nerozhodný) nebo **vyhnout se**.
-        * **🟢 Long Setup:** Doporučený ideální vstup, stop loss a take profit pro nákup/růst.
-        * **🔴 Short Setup:** Doporučený ideální vstup, stop loss a take profit pro prodej/pokles.
-        * **📊 RSI (Relative Strength Index):** Překoupeno (>65) / Přeprodáno (<35).
-        * **📰 Sentiment zpráv:** Vyhodnocení finančních novinek.
+        * **📈 AI Quantitative Trend:** Trend evaluation and price direction prediction (`BULLISH`, `BEARISH`, `NEUTRAL`).
+        * **💡 Investment Advice:** Immediate recommendation whether to **enter** (ideal buying zone/oversold), **wait** (market is overbought or undecided), or **avoid**.
+        * **🟢 Long Setup:** Recommended ideal entry, stop loss, and take profit for buying/upside.
+        * **🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit for selling/downside.
+        * **📊 RSI (Relative Strength Index):** Overbought (>65) / Oversold (<35).
+        * **📰 News Sentiment:** Financial news evaluation.
         """)
 
-    with st.expander("☕ 3. Podpora tvůrce"):
-        st.markdown("V dolní části levého bočního panelu naleznete sekci **Podpora tvůrce**.")
+    with st.expander("☕ 3. Creator Support"):
+        st.markdown("You can find the **Creator Support** section at the bottom of the left sidebar.")
 
-# --- HLAVNÍ NAVIGACE APLIKACE ---
-app_mode = st.radio("Vyberte režim zobrazení:", [
-    "📊 Skenování trhů a přehled", 
-    "🧠 AI přesnost a historie", 
-    "🏛️ Trump & Insider obchody",
-    "📘 Uživatelský manuál"
+# --- MAIN NAVIGATION ---
+app_mode = st.radio("Select display mode:", [
+    "📊 Market Scanning & Overview", 
+    "🧠 AI Accuracy & History", 
+    "🏛️ Trump & Insider Trades",
+    "📘 User Manual"
 ], horizontal=True)
 
-if app_mode == "📊 Skenování trhů a přehled":
+if app_mode == "📊 Market Scanning & Overview":
     col_main, col_insiders = st.columns([2.3, 1.2])
 
     with col_main:
-        if st.button("🚀 Spustit analýzu trhů a uložit predikce", type="primary"):
-            with st.spinner("Stahování dat, spouštění AI a aktualizace databáze..."):
+        if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
+            with st.spinner("Downloading data, running AI, and updating database..."):
                 try:
                     sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                     if isinstance(sp500.columns, pd.MultiIndex):
@@ -174,19 +174,19 @@ if app_mode == "📊 Skenování trhů a přehled":
                     sp500_close = float(sp500['Close'].iloc[-1])
                     sp500_sma50 = float(sp500['Close'].rolling(window=50).mean().iloc[-1])
                     if sp500_close < sp500_sma50:
-                        st.warning("⚠️ MAKRO VAROVÁNÍ: S&P 500 je pod 50denním klouzavým průměrem (trh pod tlakem).")
+                        st.warning("⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (market under pressure).")
                     else:
-                        st.success("🌍 MAKRO STAV: S&P 500 je v pozitivním trendu.")
+                        st.success("🌍 MACRO STATUS: S&P 500 is in a positive trend.")
                 except:
-                    st.info("🌍 Makro status se nepodařilo ověřit.")
+                    st.info("🌍 Macro status could not be verified.")
 
                 for ticker in active_tickers:
-                    with st.expander(f"Analýza pro: {ticker}"):
+                    with st.expander(f"Analysis for: {ticker}"):
                         try:
                             t_obj = yf.Ticker(ticker)
                             data = t_obj.history(period="1y", interval="1d")
                             if data.empty or len(data) < 30:
-                                st.error(f"Nedostatek dat pro {ticker}")
+                                st.error(f"Insufficient data for {ticker}")
                                 continue
 
                             if isinstance(data.columns, pd.MultiIndex):
@@ -213,7 +213,7 @@ if app_mode == "📊 Skenování trhů a přehled":
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                            # --- VÝPOČET AI SKÓRE A SMĚŘOVÁNÍ CENY ---
+                            # --- AI SCORE & QUANTITATIVE DIRECTION ---
                             ai_score = 0
                             if skutecna_cena > sma_50:
                                 ai_score += 1
@@ -226,34 +226,34 @@ if app_mode == "📊 Skenování trhů a přehled":
                                 ai_score -= 1
 
                             if ai_score > 0:
-                                quantitative_direction = "📈 BULLISH (ROSTOUCÍ TREND)"
+                                quantitative_direction = "📈 BULLISH (UPWARD TREND)"
                                 confidence = 75
                             elif ai_score < 0:
-                                quantitative_direction = "📉 BEARISH (KLEVAJÍCÍ TREND)"
+                                quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
                                 confidence = 75
                             else:
-                                quantitative_direction = "⚖️ NEUTRAL (DO BOKU)"
+                                quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
                                 confidence = 50
 
-                            # --- NOVÁ INVESTIČNÍ RADA (VSTOUPIT / ČEKAT / PŘEKOUPENO / PŘEPRODÁNO) ---
+                            # --- INVESTMENT ADVICE (ENTER / WAIT / OVERBOUGHT / OVERSOLD) ---
                             if rsi_val > 70:
-                                market_state_text = "🔴 **PŘEKOUPENO (Overbought):** Trh je extrémně vysoko, hrozí korekce."
-                                advice_action = "⏳ **DOPORUČENÍ: ČEKAT / NEVSTUPOVAT** (Nenakupujte do vrcholu, počkejte na pokles/zdravou korekci)."
+                                market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
+                                advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER** (Do not buy near the peak; wait for a pullback or healthy correction)."
                                 advice_color = "error"
                             elif rsi_val < 30:
-                                market_state_text = "🟢 **PŘEPRODÁNO (Oversold):** Aktivum je silně podhodnocené/slevněné."
-                                advice_action = "🚀 **DOPORUČENÍ: VSTOUPIT DO LONGU** (Skvělá příležitost k nákupu za výhodnou cenu za předpokladu dodržení Stop Lossu)."
+                                market_state_text = "🟢 **OVERSOLD:** The asset is heavily undervalued / discounted."
+                                advice_action = "🚀 **RECOMMENDATION: ENTER LONG** (Great buying opportunity at an advantageous price, provided Stop Loss is respected)."
                                 advice_color = "success"
                             elif is_bullish_trend and rsi_val <= 60 and rsi_val >= 40:
-                                market_state_text = "🟡 **ZDRAVÝ TREND:** Trh roste v rozumném pásmu bez extrémní mánie."
-                                advice_action = "✅ **DOPORUČENÍ: VHODNÉ K POSTUPNÉMU VSTUPU (DCA)** nebo držení pozice."
+                                market_state_text = "🟡 **HEALTHY TREND:** Market is growing within a reasonable band without extreme mania."
+                                advice_action = "✅ **RECOMMENDATION: SUITABLE FOR GRADUAL ENTRY (DCA)** or holding the position."
                                 advice_color = "success"
                             else:
-                                market_state_text = "⚖️ **NEROZHODNÝ / BOČNÍ TRH:** Chybí jasný silný moment."
-                                advice_action = "⏳ **DOPORUČENÍ: ČEKAT** na jasnější signál nebo proražení úrovní."
+                                market_state_text = "⚖️ **INDECISIVE / SIDEWAYS MARKET:** Lacks clear strong momentum."
+                                advice_action = "⏳ **RECOMMENDATION: WAIT** for a clearer signal or breakout of key levels."
                                 advice_color = "info"
 
-                            # --- VÝPOČET DVOJITÝCH SCÉNÁŘŮ (LONG VS. SHORT) ---
+                            # --- DUAL SCENARIOS (LONG VS. SHORT) ---
                             long_entry = skutecna_cena
                             long_stop_loss = skutecna_cena - (1.5 * atr_val)
                             long_take_profit = skutecna_cena + (2.5 * atr_val)
@@ -263,15 +263,15 @@ if app_mode == "📊 Skenování trhů a přehled":
                             short_take_profit = skutecna_cena - (2.5 * atr_val)
 
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("Aktuální cena", f"{skutecna_cena:.2f} USD")
+                            col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
-                            col3.metric("Zisk / 1 USD investice", f"+{zisk_na_1_usd:.2f} USD")
+                            col3.metric("Gain / 1 USD Invested", f"+{zisk_na_1_usd:.2f} USD")
 
                             st.markdown("---")
-                            st.info(f"🤖 **AI Kvantitativní směr:** {quantitative_direction} (Spolehlivost: {confidence}%)")
+                            st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
                             
-                            # Zobrazení nové investiční rady
-                            st.markdown("### 💡 Investiční rada pro obchodníka:")
+                            # Displaying investment advice
+                            st.markdown("### 💡 Investment Advice for Trader:")
                             st.markdown(market_state_text)
                             if advice_color == "success":
                                 st.success(advice_action)
@@ -283,36 +283,36 @@ if app_mode == "📊 Skenování trhů a přehled":
                             col_long, col_short = st.columns(2)
 
                             with col_long:
-                                st.markdown("#### 🟢 LONG SETUP (Růstová strategie)")
-                                st.success(f"**Ideální vstup:** ${long_entry:.2f}")
+                                st.markdown("#### 🟢 LONG SETUP (Bullish Strategy)")
+                                st.success(f"**Ideal Entry:** ${long_entry:.2f}")
                                 st.metric("🛡️ Stop Loss (Long)", f"${long_stop_loss:.2f}")
                                 st.metric("🎯 Take Profit (Long)", f"${long_take_profit:.2f}")
 
                             with col_short:
-                                st.markdown("#### 🔴 SHORT SETUP (Medvědí strategie)")
-                                st.error(f"**Ideální vstup:** ${short_entry:.2f}")
+                                st.markdown("#### 🔴 SHORT SETUP (Bearish Strategy)")
+                                st.error(f"**Ideal Entry:** ${short_entry:.2f}")
                                 st.metric("🛡️ Stop Loss (Short)", f"${short_stop_loss:.2f}")
                                 st.metric("🎯 Take Profit (Short)", f"${short_take_profit:.2f}")
 
                             st.markdown("---")
-                            st.write(f"**Sentiment zpráv:** {news_sentiment} | *\"{latest_headline}\"*")
-                            st.write(f"**Vzdálenost k 20d vrcholu:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
-                            st.write(f"**ATR Volatilita:** {atr_val:.2f}")
+                            st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
+                            st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
+                            st.write(f"**ATR Volatility:** {atr_val:.2f}")
                             
                             if next_earnings != "N/A":
-                                st.info(f"📅 **Příští výsledková sezóna (Earnings):** {next_earnings} (Očekávejte vyšší volatilitu!)")
+                                st.info(f"📅 **Next Earnings Season:** {next_earnings} (Expect higher volatility!)")
                             else:
-                                st.write("**Příští výsledková sezóna:** Neplánováno / nedostupné")
+                                st.write("**Next Earnings Season:** Unscheduled / Unavailable")
                             
                             if crowd_buying:
-                                st.markdown("🔥 **Davový poplach:** Zjištěno masivní nakupování (Vysoký objem + Růst ceny)!")
+                                st.markdown("🔥 **Crowd Alert:** Massive buying detected (High Volume + Price Rise)!")
                             elif crowd_panicking:
-                                st.markdown("🚨 **Davový poplach:** Zjištěna panická prodeje (Vysoký objem + Pokles ceny)!")
+                                st.markdown("🚨 **Crowd Alert:** Panic selling detected (High Volume + Price Drop)!")
                             else:
-                                st.markdown("👥 **Chování davu:** Klid / Normální objem.")
+                                st.markdown("👥 **Crowd Behavior:** Calm / Normal volume.")
 
-                            trend_status = "✅ OK (Rostoucí vs. SMA200)" if is_bullish_trend else "❌ Pod SMA200 (Opatrnost)"
-                            st.write(f"**Dlouhodobý trend:** {trend_status}")
+                            trend_status = "✅ OK (Bullish vs. SMA200)" if is_bullish_trend else "❌ Below SMA200 (Caution)"
+                            st.write(f"**Long-term Trend:** {trend_status}")
 
                             df = data.reset_index()[['Date', 'Close']]
                             df.columns = ['ds', 'y']
@@ -334,21 +334,21 @@ if app_mode == "📊 Skenování trhů a přehled":
                                         "target_date": target_date,
                                         "actual_price_at_prediction": round(skutecna_cena, 2)
                                     }).execute()
-                                    st.info(f"🧠 AI Učení: Predikce pro {ticker} uložena do databáze (Cíl: {target_date} -> {predicted_price_20d:.2f} USD)")
+                                    st.info(f"🧠 AI Learning: Prediction for {ticker} saved to database (Target: {target_date} -> {predicted_price_20d:.2f} USD)")
                                 except Exception as db_err:
-                                    st.warning(f"Nepodařilo se uložit do DB: {db_err}")
+                                    st.warning(f"Failed to save to DB: {db_err}")
 
                             fig, ax = plt.subplots(figsize=(10, 4))
                             model.plot(forecast, ax=ax)
-                            ax.set_title(f"Predikce pro {ticker} (na 20 dní dopředu)")
+                            ax.set_title(f"Prediction for {ticker} (20 days ahead)")
                             st.pyplot(fig)
 
                         except Exception as e:
-                            st.error(f"Chyba při zpracování {ticker}: {e}")
+                            st.error(f"Error processing {ticker}: {e}")
 
     with col_insiders:
-        st.markdown("### 🏛️ Živé nákupy insiderů")
-        st.markdown("<p style='font-size: 0.9em; color: gray;'>Sledování nedávné aktivity insiderů u top akcií.</p>", unsafe_allow_html=True)
+        st.markdown("### 🏛️ Live Insider Purchases")
+        st.markdown("<p style='font-size: 0.9em; color: gray;'>Tracking recent insider activity for top stocks.</p>", unsafe_allow_html=True)
         
         insider_data_list = []
         insider_tickers = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD"]
@@ -362,9 +362,9 @@ if app_mode == "📊 Skenování trhů a přehled":
                     insider_data_list.append({
                         "Ticker": t_sym,
                         "Insider": str(latest.get('Name', 'N/A')),
-                        "Pozice": str(latest.get('Position', 'Insider')),
-                        "Akce": str(latest.get('Transaction', 'Akce')),
-                        "Akcie": str(latest.get('Shares', 'N/A'))
+                        "Position": str(latest.get('Position', 'Insider')),
+                        "Action": str(latest.get('Transaction', 'Action')),
+                        "Shares": str(latest.get('Shares', 'N/A'))
                     })
             except Exception:
                 pass
@@ -379,11 +379,11 @@ if app_mode == "📊 Skenování trhů a přehled":
                 height=table_height
             )
         else:
-            st.info("V tuto chvíli nejsou k dispozici žádná čerstvá data o insiderch.")
+            st.info("No fresh insider data available at this time.")
 
-elif app_mode == "🧠 AI přesnost a historie":
-    st.subheader("🧠 AI Učení a Historie Predikcí (Backtesting)")
-    st.write("Tato sekce načítá data z databáze a porovnává minulé predikce s reálným vývojem na trhu.")
+elif app_mode == "🧠 AI Accuracy & History":
+    st.subheader("🧠 AI Learning & Prediction History (Backtesting)")
+    st.write("This section pulls data from the database and compares past predictions with actual market developments.")
     
     if supabase:
         try:
@@ -393,30 +393,30 @@ elif app_mode == "🧠 AI přesnost a historie":
             if data_rows:
                 df_preds = pd.DataFrame(data_rows)
                 st.dataframe(df_preds, use_container_width=True)
-                st.info("💡 Jakmile uplyne cílové datum (`target_date`), můžete sledovat, jak přesná byla AI predikce oproti reálné tržní ceně.")
+                st.info("💡 Once the target date (`target_date`) passes, you can review how accurate the AI prediction was compared to the actual market price.")
             else:
-                st.warning("V databázi zatím nejsou uloženy žádné predikce. Spusťte prosím analýzu na hlavní stránce.")
+                st.warning("No predictions stored in the database yet. Please run an analysis on the main page.")
         except Exception as e:
-            st.error(f"Nepodařilo se načíst historii z databáze: {e}")
+            st.error(f"Failed to load history from database: {e}")
     else:
-        st.error("Supabase není připojena.")
+        st.error("Supabase is not connected.")
 
-elif app_mode == "🏛️ Trump & Insider obchody":
+elif app_mode == "🏛️ Trump & Insider Trades":
     render_trump_and_political_trades()
 
-elif app_mode == "📘 Uživatelský manuál":
+elif app_mode == "📘 User Manual":
     render_user_manual()
 
-# --- SEKCE PRO PODPORU TVŮRCE (QR KÓD V BOČNÍM PANELU) ---
+# --- CREATOR SUPPORT SECTION (QR CODE IN SIDEBAR) ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("☕ Podpořte tvůrce - David_Seda")
+st.sidebar.subheader("☕ Support the Creator - David_Seda")
 
 try:
     st.sidebar.image("qr_solana.png", width=180)
 except Exception:
-    st.sidebar.info("📌 Obrázek QR kódu nebyl nalezen. Přidejte prosím 'qr_solana.png' do složky projektu.")
+    st.sidebar.info("📌 QR code image not found. Please add 'qr_solana.png' to the project folder.")
 
 st.sidebar.markdown(
-    "<p style='font-size: 0.9em; color: gray;'>Pokud vám tato aplikace přináší hodnotu nebo zisk, pozvěte mě na kávu! ☕</p>", 
+    "<p style='font-size: 0.9em; color: gray;'>If this app brings you value or profits, buy me a coffee! ☕</p>", 
     unsafe_allow_html=True
 )

@@ -98,39 +98,64 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- FUNKCE PRO VYKRESLENÍ MANUÁLU ---
+# --- SEKCE PRO TRUMPOVY NÁKUPY A ODKAZY ---
+def render_trump_and_political_trades():
+    st.subheader("🏛️ Donald Trump & Family Stock Disclosures")
+    st.write("Overview of major tracked transactions and disclosures reported in official government ethics filings.")
+
+    trump_data = [
+        {"Date": "2026-06-18", "Asset": "Berkshire Hathaway (BRK-B)", "Type": "Purchase", "Estimated Value": "$1M - $5M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-23", "Asset": "Visa Inc (V)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-24", "Asset": "Mastercard (MA)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
+        {"Date": "2026-06-03", "Asset": "Palantir (PLTR)", "Type": "Purchase/Sale", "Estimated Value": "$15K - $50K", "Status": "Rotated / Traded"},
+        {"Date": "2025-04-08", "Asset": "Big Tech Basket (AAPL, MSFT, GOOGL)", "Type": "Large Purchase", "Estimated Value": "$12.8M total", "Status": "Core Holding"}
+    ]
+    
+    df_trump = pd.DataFrame(trump_data)
+    st.dataframe(df_trump, use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### 🔗 Official Sources & Public Disclosures (Free Access)")
+    st.write("You can verify all asset records and raw documentation directly through official public registries:")
+    
+    st.markdown("- 🇺🇸 [U.S. Office of Government Ethics (OGE) Official Search](https://www.oge.gov/web/oge.nsf/Officials%20Individual%20Disclosures%20Search%20Collection?OpenForm)")
+    st.markdown("- 📊 [ProPublica Trump & Appointees Financial Disclosures Database](https://projects.propublica.org/trump-team-financial-disclosures/)")
+    st.markdown("- 🏛️ [U.S. Senate Electronic Financial Disclosure (eFD) System](https://efd.senate.gov/)")
+
+    st.info("💡 Tip: You can copy any ticker from the table above (e.g., `BRK-B`, `V`) and paste it into the **Custom Asset Search** sidebar on the main screen to analyze its current technical indicators and AI outlook.")
+
+# --- UŽIVATELSKÝ MANUÁL ---
 def render_user_manual():
     st.subheader("📘 Klondike AI Investment Scanner: User Guide")
     st.markdown("Welcome to the beginner's guide for the Klondike AI Investment Scanner. This manual will help you navigate the app, understand the indicators, and manage your investments with the help of artificial intelligence.")
 
     with st.expander("📖 1. How to Launch and Navigate the App"):
         st.markdown("""
-        The application runs directly in your web browser and is divided into two main sections (which you can switch between using the top menu):
+        The application runs directly in your web browser and is divided into main sections using the top menu:
         
-        1. **📊 Market Scanner & Dashboard (Main Overview):**
-           * This is where market analysis happens.
-           * In the left sidebar, type any ticker symbol into the **"Add Ticker"** field (e.g., `AAPL` for Apple, `TSLA` for Tesla, `NFLX` for Netflix) and press Enter. It will automatically be added to your active watchlist.
-           * Click the **🚀 Run Analysis...** button to let the app scan the markets, calculate key indicators, and display the results.
-        2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):**
-           * This section tracks past predictions, allowing you to review how accurate the artificial intelligence has been over time.
+        1. **📊 Market Scanner & Dashboard (Main Overview):** Scan markets, add custom tickers via sidebar, and run AI analytics.
+        2. **🧠 AI Accuracy & Backtesting History (History & AI Performance):** Review past database predictions.
+        3. **🏛️ Trump & Insider Trades:** Check disclosed financial portfolio tracking and official sources.
+        4. **📘 User Manual:** Read guidance and descriptions.
         """)
 
     with st.expander("📊 2. What Do the Indicators Mean?"):
         st.markdown("""
-        * **📈 AI Quantitative Direction:** Based on moving averages and technical indicators like RSI, the AI evaluates the current market trend (`BULLISH`, `BEARISH`, or `NEUTRAL`).
-        * **🛡️ Risk Management (Stop Loss & Take Profit):** Automated risk management levels calculated using volatility (ATR) to help you limit losses and lock in gains.
-        * **📊 RSI (Relative Strength Index):** Measures whether an asset is overbought (above 65) or oversold (below 35) on a scale from 0 to 100.
-        * **📰 News Sentiment:** Scans latest financial headlines to determine whether the news tone is `BULLISH`, `BEARISH`, or `NEUTRAL`.
-        * **🔥 Crowd Alert:** Detects heavy buying pressure or sudden market sell-offs based on trading volumes.
+        * **📈 AI Quantitative Direction:** Trend evaluation (`BULLISH`, `BEARISH`, `NEUTRAL`).
+        * **🛡️ Risk Management (Stop Loss & Take Profit):** Automated ATR volatility limits.
+        * **📊 RSI (Relative Strength Index):** Overbought (>65) / Oversold (<35) ranges.
+        * **📰 News Sentiment:** Financial news evaluation.
+        * **🔥 Crowd Alert:** Volume anomalies detection.
         """)
 
     with st.expander("☕ 3. Support the Creator"):
-        st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section, where you can use a QR code to support the developer via a small cryptocurrency tip.")
+        st.markdown("At the bottom of the left sidebar, you will find the **Support the Creator** section.")
 
-# --- HLAVNÍ NAVIGACE (ROZŠÍŘENA O MANUÁL) ---
+# --- HLAVNÍ NAVIGACE ---
 app_mode = st.radio("Select View / Režim zobrazení:", [
     "📊 Market Scanner & Dashboard", 
     "🧠 AI Accuracy & Backtesting History", 
+    "🏛️ Trump & Insider Trades",
     "📘 User Manual"
 ], horizontal=True)
 
@@ -186,7 +211,6 @@ if app_mode == "📊 Market Scanner & Dashboard":
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
                             zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                            # --- AI / KVANTITATIVNÍ ODHAD SMĚRU A SL/TP ---
                             ai_score = 0
                             if skutecna_cena > sma_50:
                                 ai_score += 1
@@ -338,6 +362,9 @@ elif app_mode == "🧠 AI Accuracy & Backtesting History":
             st.error(f"Nepodařilo se načíst historii z databáze: {e}")
     else:
         st.error("Supabase není připojena.")
+
+elif app_mode == "🏛️ Trump & Insider Trades":
+    render_trump_and_political_trades()
 
 elif app_mode == "📘 User Manual":
     render_user_manual()

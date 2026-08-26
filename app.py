@@ -134,7 +134,7 @@ def render_user_manual():
         st.markdown("""
         Aplikace běží přímo ve webovém prohlížeči a je rozdělená do hlavních sekcí pomocí horního menu:
         
-        1. **📊 Skenování trhů a přehled:** Skenujte trhy, přidejte vlastní tickery v postranním panelu a spusťte AI analýzu včetně výhledu trendu a obchodních nastavení Long/Short.
+        1. **📊 Skenování trhů a přehled:** Skenujte trhy, přidejte vlastní tickery v postranním panelu a spusťte AI analýzu včetně výhledu trendu, obchodních nastavení Long/Short a **konkrétní investiční rady (Vstoupit / Čekat)**.
         2. **🧠 AI přesnost a historie (Backtesting):** Zkontrolujte historické predikce uložené v databázi.
         3. **🏛️ Trump & Insider obchody:** Sledujte politické a insider transakce.
         4. **📘 Uživatelský manuál:** Přečtěte si nápovědu a popis funkcí.
@@ -143,11 +143,11 @@ def render_user_manual():
     with st.expander("📊 2. Co znamenají jednotlivé indikátory?"):
         st.markdown("""
         * **📈 AI Kvantitativní směr:** Vyhodnocení trendu a predikce směru ceny (`BULLISH`, `BEARISH`, `NEUTRAL`).
+        * **💡 Investiční doporučení:** Okamžitá rada jestli **vstoupit** (ideální nákupní zóna/přeprodáno), **čekat** (trh je překoupený nebo nerozhodný) nebo **vyhnout se**.
         * **🟢 Long Setup:** Doporučený ideální vstup, stop loss a take profit pro nákup/růst.
         * **🔴 Short Setup:** Doporučený ideální vstup, stop loss a take profit pro prodej/pokles.
         * **📊 RSI (Relative Strength Index):** Překoupeno (>65) / Přeprodáno (<35).
         * **📰 Sentiment zpráv:** Vyhodnocení finančních novinek.
-        * **🔥 Davový poplach (Crowd Alert):** Detekce anomálií v objemech obchodů.
         """)
 
     with st.expander("☕ 3. Podpora tvůrce"):
@@ -229,11 +229,29 @@ if app_mode == "📊 Skenování trhů a přehled":
                                 quantitative_direction = "📈 BULLISH (ROSTOUCÍ TREND)"
                                 confidence = 75
                             elif ai_score < 0:
-                                quantitative_direction = "📉 BEARISH (KLLEVAJÍCÍ TREND)"
+                                quantitative_direction = "📉 BEARISH (KLEVAJÍCÍ TREND)"
                                 confidence = 75
                             else:
                                 quantitative_direction = "⚖️ NEUTRAL (DO BOKU)"
                                 confidence = 50
+
+                            # --- NOVÁ INVESTIČNÍ RADA (VSTOUPIT / ČEKAT / PŘEKOUPENO / PŘEPRODÁNO) ---
+                            if rsi_val > 70:
+                                market_state_text = "🔴 **PŘEKOUPENO (Overbought):** Trh je extrémně vysoko, hrozí korekce."
+                                advice_action = "⏳ **DOPORUČENÍ: ČEKAT / NEVSTUPOVAT** (Nenakupujte do vrcholu, počkejte na pokles/zdravou korekci)."
+                                advice_color = "error"
+                            elif rsi_val < 30:
+                                market_state_text = "🟢 **PŘEPRODÁNO (Oversold):** Aktivum je silně podhodnocené/slevněné."
+                                advice_action = "🚀 **DOPORUČENÍ: VSTOUPIT DO LONGU** (Skvělá příležitost k nákupu za výhodnou cenu za předpokladu dodržení Stop Lossu)."
+                                advice_color = "success"
+                            elif is_bullish_trend and rsi_val <= 60 and rsi_val >= 40:
+                                market_state_text = "🟡 **ZDRAVÝ TREND:** Trh roste v rozumném pásmu bez extrémní mánie."
+                                advice_action = "✅ **DOPORUČENÍ: VHODNÉ K POSTUPNÉMU VSTUPU (DCA)** nebo držení pozice."
+                                advice_color = "success"
+                            else:
+                                market_state_text = "⚖️ **NEROZHODNÝ / BOČNÍ TRH:** Chybí jasný silný moment."
+                                advice_action = "⏳ **DOPORUČENÍ: ČEKAT** na jasnější signál nebo proražení úrovní."
+                                advice_color = "info"
 
                             # --- VÝPOČET DVOJITÝCH SCÉNÁŘŮ (LONG VS. SHORT) ---
                             long_entry = skutecna_cena
@@ -251,6 +269,16 @@ if app_mode == "📊 Skenování trhů a přehled":
 
                             st.markdown("---")
                             st.info(f"🤖 **AI Kvantitativní směr:** {quantitative_direction} (Spolehlivost: {confidence}%)")
+                            
+                            # Zobrazení nové investiční rady
+                            st.markdown("### 💡 Investiční rada pro obchodníka:")
+                            st.markdown(market_state_text)
+                            if advice_color == "success":
+                                st.success(advice_action)
+                            elif advice_color == "error":
+                                st.error(advice_action)
+                            else:
+                                st.info(advice_action)
 
                             col_long, col_short = st.columns(2)
 

@@ -22,7 +22,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- CUSTOM TICKER SEARCH IN SIDEBAR ---
+# --- CUSTOM TICKER SEARCH & FILTERS IN SIDEBAR ---
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
@@ -32,6 +32,10 @@ active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
     active_tickers.insert(0, custom_ticker_input)
     st.sidebar.success(f"Added {custom_ticker_input} to scanning list!")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🎛️ Quick Filters")
+filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.8 USD", value=False)
 
 PRED_DAYS = 20
 
@@ -134,7 +138,7 @@ def render_user_manual():
         st.markdown("""
         The application runs directly in your web browser and is split into main sections via the top menu:
         
-        1. **📊 Market Scanning & Overview:** Scan markets, add custom tickers in the sidebar, and run AI analysis including trend outlooks, Long/Short trading setups, and **direct investment advice (Enter / Wait)**.
+        1. **📊 Market Scanning & Overview:** Scan markets, add custom tickers in the sidebar, use filters like **Gain ≥ 0.8 USD**, and run AI analysis including trend outlooks, Long/Short trading setups, and direct investment advice.
         2. **🧠 AI Accuracy & History (Backtesting):** Check historical predictions saved in the database.
         3. **🏛️ Trump & Insider Trades:** Track political and insider transactions.
         4. **📘 User Manual:** Read help and feature descriptions.
@@ -180,18 +184,28 @@ if app_mode == "📊 Market Scanning & Overview":
                 except:
                     st.info("🌍 Macro status could not be verified.")
 
+                analyzed_count = 0
                 for ticker in active_tickers:
-                    with st.expander(f"Analysis for: {ticker}"):
-                        try:
-                            t_obj = yf.Ticker(ticker)
-                            data = t_obj.history(period="1y", interval="1d")
-                            if data.empty or len(data) < 30:
-                                st.error(f"Insufficient data for {ticker}")
-                                continue
+                    try:
+                        t_obj = yf.Ticker(ticker)
+                        data = t_obj.history(period="1y", interval="1d")
+                        if data.empty or len(data) < 30:
+                            continue
 
-                            if isinstance(data.columns, pd.MultiIndex):
-                                data.columns = data.columns.get_level_values(0)
+                        if isinstance(data.columns, pd.MultiIndex):
+                            data.columns = data.columns.get_level_values(0)
 
+                        skutecna_cena = float(data['Close'].iloc[-1])
+                        vrchol_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
+                        rozdil_usd = vrchol_20d - skutecna_cena
+                        zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
+
+                        # Apply quick filter for Gain / 1 USD Invested >= 0.8
+                        if filter_high_gain and zisk_na_1_usd < 0.8:
+                            continue
+
+                        analyzed_count += 1
+                        with st.expander(f"Analysis for: {ticker} (Gain/USD: +{zisk_na_1_usd:.2f})"):
                             news_sentiment, latest_headline = analyze_news_sentiment(t_obj)
                             rsi_val = calculate_rsi(data)
                             atr_val = calculate_atr(data)
@@ -199,7 +213,6 @@ if app_mode == "📊 Market Scanning & Overview":
                             sma_200 = float(data['Close'].rolling(window=200).mean().iloc[-1]) if len(data) >= 200 else float(data['Close'].mean())
                             next_earnings = get_next_earnings_date(t_obj)
                             
-                            skutecna_cena = float(data['Close'].iloc[-1])
                             predchozi_cena = float(data['Close'].iloc[-2])
                             current_volume = float(data['Volume'].iloc[-1])
                             avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
@@ -208,10 +221,7 @@ if app_mode == "📊 Market Scanning & Overview":
                             crowd_panicking = current_volume > (avg_volume_30d * 2.0) and skutecna_cena < predchozi_cena
                             is_bullish_trend = skutecna_cena > sma_200
 
-                            vrchol_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
-                            rozdil_usd = vrchol_20d - skutecna_cena
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
-                            zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
                             # --- AI SCORE & QUANTITATIVE DIRECTION ---
                             ai_score = 0
@@ -345,6 +355,9 @@ if app_mode == "📊 Market Scanning & Overview":
 
                         except Exception as e:
                             st.error(f"Error processing {ticker}: {e}")
+                
+                if filter_high_gain and analyzed_count == 0:
+                    st.warning("⚠️ No assets currently match the filter criteria (Gain / 1 USD ≥ 0.8). Try turning off the filter.")
 
     with col_insiders:
         st.markdown("### 🏛️ Live Insider Purchases")

@@ -197,70 +197,94 @@ if app_mode == "📊 Market Scanning & Overview":
                             continue
 
                         analyzed_count += 1
+                        
+                        news_sentiment, latest_headline = analyze_news_sentiment(t_obj)
+                        rsi_val = calculate_rsi(data)
+                        atr_val = calculate_atr(data)
+                        sma_50 = float(data['Close'].rolling(window=50).mean().iloc[-1]) if len(data) >= 50 else float(data['Close'].mean())
+                        sma_200 = float(data['Close'].rolling(window=200).mean().iloc[-1]) if len(data) >= 200 else float(data['Close'].mean())
+                        next_earnings = get_next_earnings_date(t_obj)
+                        
+                        predchozi_cena = float(data['Close'].iloc[-2])
+                        current_volume = float(data['Volume'].iloc[-1])
+                        avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
+                        
+                        crowd_buying = current_volume > (avg_volume_30d * 2.0) and skutecna_cena > predchozi_cena
+                        crowd_panicking = current_volume > (avg_volume_30d * 2.0) and skutecna_cena < predchozi_cena
+                        is_bullish_trend = skutecna_cena > sma_200
+
+                        potencial_procent = (rozdil_usd / skutecna_cena) * 100
+
+                        ai_score = 0
+                        if skutecna_cena > sma_50:
+                            ai_score += 1
+                        else:
+                            ai_score -= 1
+
+                        if rsi_val < 35:
+                            ai_score += 1
+                        elif rsi_val > 65:
+                            ai_score -= 1
+
+                        if ai_score > 0:
+                            quantitative_direction = "📈 BULLISH (UPWARD TREND)"
+                            confidence = 75
+                        elif ai_score < 0:
+                            quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
+                            confidence = 75
+                        else:
+                            quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
+                            confidence = 50
+
+                        if rsi_val > 70:
+                            market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
+                            advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER**"
+                            advice_color = "error"
+                        elif rsi_val < 30:
+                            market_state_text = "🟢 **OVERSOLD:** The asset is heavily undervalued / discounted."
+                            advice_action = "🚀 **RECOMMENDATION: ENTER LONG**"
+                            advice_color = "success"
+                        elif is_bullish_trend and rsi_val <= 60 and rsi_val >= 40:
+                            market_state_text = "🟡 **HEALTHY TREND:** Market is growing within a reasonable band."
+                            advice_action = "✅ **RECOMMENDATION: SUITABLE FOR GRADUAL ENTRY (DCA)**"
+                            advice_color = "success"
+                        else:
+                            market_state_text = "⚖️ **INDECISIVE / SIDEWAYS MARKET:** Lacks clear strong momentum."
+                            advice_action = "⏳ **RECOMMENDATION: WAIT**"
+                            advice_color = "info"
+
+                        long_entry = skutecna_cena
+                        long_stop_loss = skutecna_cena - (1.5 * atr_val)
+                        long_take_profit = skutecna_cena + (2.5 * atr_val)
+
+                        short_entry = skutecna_cena
+                        short_stop_loss = skutecna_cena + (1.5 * atr_val)
+                        short_take_profit = skutecna_cena - (2.5 * atr_val)
+
+                        df = data.reset_index()[['Date', 'Close']]
+                        df.columns = ['ds', 'y']
+                        df['ds'] = df['ds'].dt.tz_localize(None)
+
+                        model = Prophet(daily_seasonality=False, yearly_seasonality=True)
+                        model.fit(df)
+                        future = model.make_future_dataframe(periods=PRED_DAYS)
+                        forecast = model.predict(future)
+
+                        predicted_price_20d = float(forecast.iloc[-1]['yhat'])
+                        target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
+
+                        if supabase:
+                            try:
+                                supabase.table("predictions").insert({
+                                    "ticker": ticker,
+                                    "predicted_price": round(predicted_price_20d, 2),
+                                    "target_date": target_date,
+                                    "actual_price_at_prediction": round(skutecna_cena, 2)
+                                }).execute()
+                            except Exception:
+                                pass
+
                         with st.expander(f"Analysis for: {ticker} (Gain/USD: +{zisk_na_1_usd:.2f})"):
-                            news_sentiment, latest_headline = analyze_news_sentiment(t_obj)
-                            rsi_val = calculate_rsi(data)
-                            atr_val = calculate_atr(data)
-                            sma_50 = float(data['Close'].rolling(window=50).mean().iloc[-1]) if len(data) >= 50 else float(data['Close'].mean())
-                            sma_200 = float(data['Close'].rolling(window=200).mean().iloc[-1]) if len(data) >= 200 else float(data['Close'].mean())
-                            next_earnings = get_next_earnings_date(t_obj)
-                            
-                            predchozi_cena = float(data['Close'].iloc[-2])
-                            current_volume = float(data['Volume'].iloc[-1])
-                            avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
-                            
-                            crowd_buying = current_volume > (avg_volume_30d * 2.0) and skutecna_cena > predchozi_cena
-                            crowd_panicking = current_volume > (avg_volume_30d * 2.0) and skutecna_cena < predchozi_cena
-                            is_bullish_trend = skutecna_cena > sma_200
-
-                            potencial_procent = (rozdil_usd / skutecna_cena) * 100
-
-                            ai_score = 0
-                            if skutecna_cena > sma_50:
-                                ai_score += 1
-                            else:
-                                ai_score -= 1
-
-                            if rsi_val < 35:
-                                ai_score += 1
-                            elif rsi_val > 65:
-                                ai_score -= 1
-
-                            if ai_score > 0:
-                                quantitative_direction = "📈 BULLISH (UPWARD TREND)"
-                                confidence = 75
-                            elif ai_score < 0:
-                                quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
-                                confidence = 75
-                            else:
-                                quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
-                                confidence = 50
-
-                            if rsi_val > 70:
-                                market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
-                                advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER** (Do not buy near the peak; wait for a pullback or healthy correction)."
-                                advice_color = "error"
-                            elif rsi_val < 30:
-                                market_state_text = "🟢 **OVERSOLD:** The asset is heavily undervalued / discounted."
-                                advice_action = "🚀 **RECOMMENDATION: ENTER LONG** (Great buying opportunity at an advantageous price, provided Stop Loss is respected)."
-                                advice_color = "success"
-                            elif is_bullish_trend and rsi_val <= 60 and rsi_val >= 40:
-                                market_state_text = "🟡 **HEALTHY TREND:** Market is growing within a reasonable band without extreme mania."
-                                advice_action = "✅ **RECOMMENDATION: SUITABLE FOR GRADUAL ENTRY (DCA)** or holding the position."
-                                advice_color = "success"
-                            else:
-                                market_state_text = "⚖️ **INDECISIVE / SIDEWAYS MARKET:** Lacks clear strong momentum."
-                                advice_action = "⏳ **RECOMMENDATION: WAIT** for a clearer signal or breakout of key levels."
-                                advice_color = "info"
-
-                            long_entry = skutecna_cena
-                            long_stop_loss = skutecna_cena - (1.5 * atr_val)
-                            long_take_profit = skutecna_cena + (2.5 * atr_val)
-
-                            short_entry = skutecna_cena
-                            short_stop_loss = skutecna_cena + (1.5 * atr_val)
-                            short_take_profit = skutecna_cena - (2.5 * atr_val)
-
                             col1, col2, col3 = st.columns(3)
                             col1.metric("Current Price", f"{skutecna_cena:.2f} USD")
                             col2.metric("RSI (14)", f"{rsi_val:.1f}")
@@ -312,37 +336,13 @@ if app_mode == "📊 Market Scanning & Overview":
                             trend_status = "✅ OK (Bullish vs. SMA200)" if is_bullish_trend else "❌ Below SMA200 (Caution)"
                             st.write(f"**Long-term Trend:** {trend_status}")
 
-                            df = data.reset_index()[['Date', 'Close']]
-                            df.columns = ['ds', 'y']
-                            df['ds'] = df['ds'].dt.tz_localize(None)
-
-                            model = Prophet(daily_seasonality=False, yearly_seasonality=True)
-                            model.fit(df)
-                            future = model.make_future_dataframe(periods=PRED_DAYS)
-                            forecast = model.predict(future)
-
-                            predicted_price_20d = float(forecast.iloc[-1]['yhat'])
-                            target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
-
-                            if supabase:
-                                try:
-                                    supabase.table("predictions").insert({
-                                        "ticker": ticker,
-                                        "predicted_price": round(predicted_price_20d, 2),
-                                        "target_date": target_date,
-                                        "actual_price_at_prediction": round(skutecna_cena, 2)
-                                    }).execute()
-                                    st.info(f"🧠 AI Learning: Prediction for {ticker} saved to database (Target: {target_date} -> {predicted_price_20d:.2f} USD)")
-                                except Exception as db_err:
-                                    st.warning(f"Failed to save to DB: {db_err}")
-
                             fig, ax = plt.subplots(figsize=(10, 4))
                             model.plot(forecast, ax=ax)
                             ax.set_title(f"Prediction for {ticker} (20 days ahead)")
                             st.pyplot(fig)
 
-                        except Exception as e:
-                            st.error(f"Error processing {ticker}: {e}")
+                    except Exception as e:
+                        st.error(f"Error processing {ticker}: {e}")
                 
                 if filter_high_gain and analyzed_count == 0:
                     st.warning("⚠️ No assets currently match the filter criteria (Gain / 1 USD ≥ 0.8). Try turning off the filter.")

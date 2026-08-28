@@ -20,7 +20,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-st.sidebar.markdown("### 🔍 Custom Asset Search")
+st.sidebar.markdown("🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
 DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "GLD", "BTC-USD", "VT", "^GSPC", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
@@ -31,7 +31,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
     st.sidebar.success(f"Added {custom_ticker_input} to scanning list!")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🎛️ Quick Filters")
+st.sidebar.markdown("🎛️ Quick Filters")
 # Zde opraveno z 0.8 na 0.08 v textu přepínače
 filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.08 USD", value=False)
 

@@ -32,7 +32,8 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Quick Filters")
-filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.8 USD", value=False)
+# Zde opraveno z 0.8 na 0.08 v textu přepínače
+filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.08 USD", value=False)
 
 PRED_DAYS = 20
 
@@ -132,7 +133,7 @@ def render_user_manual():
         st.markdown("""
         The application runs directly in your web browser and is split into main sections via the top menu:
         
-        1. **📊 Market Scanning & Overview:** Scan markets, add custom tickers in the sidebar, use filters like **Gain ≥ 0.8 USD**, and run AI analysis including trend outlooks, Long/Short trading setups, and direct investment advice.
+        1. **📊 Market Scanning & Overview:** Scan markets, add custom tickers in the sidebar, use filters like **Gain ≥ 0.08 USD**, and run AI analysis including trend outlooks, Long/Short trading setups, and direct investment advice.
         2. **🧠 AI Accuracy & History (Backtesting):** Check historical predictions saved in the database.
         3. **🏛️ Trump & Insider Trades:** Track political and insider transactions.
         4. **📘 User Manual:** Read help and feature descriptions.
@@ -193,7 +194,8 @@ if app_mode == "📊 Market Scanning & Overview":
                         rozdil_usd = vrchol_20d - skutecna_cena
                         zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                        if filter_high_gain and zisk_na_1_usd < 0.8:
+                        # Zde opraveno z 0.8 na 0.08 v podmínce filtru
+                        if filter_high_gain and zisk_na_1_usd < 0.08:
                             continue
 
                         analyzed_count += 1
@@ -344,8 +346,9 @@ if app_mode == "📊 Market Scanning & Overview":
                     except Exception as e:
                         st.error(f"Error processing {ticker}: {e}")
                 
+                # Zde upraveno varování taktéž na 0.08
                 if filter_high_gain and analyzed_count == 0:
-                    st.warning("⚠️ No assets currently match the filter criteria (Gain / 1 USD ≥ 0.8). Try turning off the filter.")
+                    st.warning("⚠️ No assets currently match the filter criteria (Gain / 1 USD ≥ 0.08). Try turning off the filter.")
 
     with col_insiders:
         st.markdown("### 🏛️ Live Insider Purchases")

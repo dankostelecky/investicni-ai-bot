@@ -7,13 +7,11 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Page configuration
 st.set_page_config(page_title="Klondike AI Investment Scanner", page_icon="🤖", layout="wide")
 
 st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning + Custom Search)")
 st.write("This application analyzes markets, monitors crowd psychology, calculates dual Long/Short scenarios, and learns from history using a database.")
 
-# --- SUPABASE DATABASE CONFIGURATION ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -22,7 +20,6 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-# --- CUSTOM TICKER SEARCH & FILTERS IN SIDEBAR ---
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
@@ -39,7 +36,6 @@ filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.8 USD", value=Fa
 
 PRED_DAYS = 20
 
-# --- HELPER FUNCTIONS FOR INDICATORS ---
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -103,7 +99,6 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# --- TRUMP AND POLITICAL TRADES SECTION ---
 def render_trump_and_political_trades():
     st.subheader("🏛️ Donald Trump & Family Asset Transactions")
     st.write("Overview of tracked transactions and asset disclosures reported in official government registries.")
@@ -129,7 +124,6 @@ def render_trump_and_political_trades():
 
     st.info("💡 Tip: You can copy any ticker from the table above (e.g., `BRK-B`, `V`) and paste it into the **Custom Asset Search** sidebar to analyze current technical indicators and AI outlook.")
 
-# --- USER MANUAL ---
 def render_user_manual():
     st.subheader("📘 Klondike AI Investment Scanner: User Manual")
     st.markdown("Welcome to the guide for Klondike AI Investment Scanner. This manual will help you navigate the interface, indicators, and investment management.")
@@ -157,7 +151,6 @@ def render_user_manual():
     with st.expander("☕ 3. Creator Support"):
         st.markdown("You can find the **Creator Support** section at the bottom of the left sidebar.")
 
-# --- MAIN NAVIGATION ---
 app_mode = st.radio("Select display mode:", [
     "📊 Market Scanning & Overview", 
     "🧠 AI Accuracy & History", 
@@ -200,7 +193,6 @@ if app_mode == "📊 Market Scanning & Overview":
                         rozdil_usd = vrchol_20d - skutecna_cena
                         zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                        # Apply quick filter for Gain / 1 USD Invested >= 0.8
                         if filter_high_gain and zisk_na_1_usd < 0.8:
                             continue
 
@@ -223,7 +215,6 @@ if app_mode == "📊 Market Scanning & Overview":
 
                             potencial_procent = (rozdil_usd / skutecna_cena) * 100
 
-                            # --- AI SCORE & QUANTITATIVE DIRECTION ---
                             ai_score = 0
                             if skutecna_cena > sma_50:
                                 ai_score += 1
@@ -245,7 +236,6 @@ if app_mode == "📊 Market Scanning & Overview":
                                 quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
                                 confidence = 50
 
-                            # --- INVESTMENT ADVICE (ENTER / WAIT / OVERBOUGHT / OVERSOLD) ---
                             if rsi_val > 70:
                                 market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
                                 advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER** (Do not buy near the peak; wait for a pullback or healthy correction)."
@@ -263,7 +253,6 @@ if app_mode == "📊 Market Scanning & Overview":
                                 advice_action = "⏳ **RECOMMENDATION: WAIT** for a clearer signal or breakout of key levels."
                                 advice_color = "info"
 
-                            # --- DUAL SCENARIOS (LONG VS. SHORT) ---
                             long_entry = skutecna_cena
                             long_stop_loss = skutecna_cena - (1.5 * atr_val)
                             long_take_profit = skutecna_cena + (2.5 * atr_val)
@@ -280,7 +269,6 @@ if app_mode == "📊 Market Scanning & Overview":
                             st.markdown("---")
                             st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
                             
-                            # Displaying investment advice
                             st.markdown("### 💡 Investment Advice for Trader:")
                             st.markdown(market_state_text)
                             if advice_color == "success":
@@ -420,7 +408,6 @@ elif app_mode == "🏛️ Trump & Insider Trades":
 elif app_mode == "📘 User Manual":
     render_user_manual()
 
-# --- CREATOR SUPPORT SECTION (QR CODE IN SIDEBAR) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("☕ Support the Creator - David_Seda")
 

@@ -20,7 +20,7 @@ except Exception as e:
     supabase = None
     st.sidebar.warning(f"⚠️ Database not connected: {e}")
 
-st.sidebar.markdown("🔍 Custom Asset Search")
+st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
 DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "GLD", "BTC-USD", "VT", "^GSPC", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
@@ -31,8 +31,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
     st.sidebar.success(f"Added {custom_ticker_input} to scanning list!")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🎛️ Quick Filters")
-# Zde opraveno z 0.8 na 0.08 v textu přepínače
+st.sidebar.markdown("### 🎛️ Quick Filters")
 filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.08 USD", value=False)
 
 PRED_DAYS = 20
@@ -149,8 +148,77 @@ def render_user_manual():
         * **📰 News Sentiment:** Financial news evaluation.
         """)
 
-   
-    with st.expander("☕ 3. Creator Support"):
+    with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
+        st.markdown("""
+        ### Professional User Manual: Klondike AI Investment Scanner
+        This manual details the mathematical formulas, logical rules, and algorithms used by the Klondike AI Investment Scanner application to calculate various items, financial metrics, technical indicators, and trading scenarios.
+
+        #### 1. Technical and Quantitative Indicators
+        **1.1. Relative Strength Index (RSI)**  
+        RSI measures the speed and change of price movements to identify overbought or oversold conditions of an asset. The calculation runs over a 14-period window ($\text{window} = 14$):  
+        * Price Change ($\Delta$): $\\Delta_t = \\text{Close}_t - \\text{Close}_{t-1}$  
+        * Average Gain and Loss: Gains ($\\text{gain}$) are values where $\\Delta > 0$ (otherwise $0$), averaged using a 14-period moving average. Losses ($\\text{loss}$) are absolute values where $\\Delta < 0$ (otherwise $0$), averaged using a 14-period moving average.  
+        * Relative Strength (RS): $\\text{RS} = \\frac{\\text{Gain}}{\\text{Loss}}$  
+        * RSI Calculation: $\\text{RSI} = 100 - \\left(\\frac{100}{1 + \\text{RS}}\\right)$  
+        *Code Interpretation:* RSI $< 30$ indicates oversold conditions, while RSI $> 70$ indicates overbought conditions.
+
+        **1.2. Average True Range (ATR)**  
+        ATR measures market volatility by factoring in interday gaps. It is calculated using a 14-day window:  
+        * Three True Range (TR) Components:  
+          $\\text{TR}_1 = \\text{High} - \\text{Low}$  
+          $\\text{TR}_2 = \\vert \\text{High} - \\text{Close}_{\\text{prev}} \\vert$  
+          $\\text{TR}_3 = \\vert \\text{Low} - \\text{Close}_{\\text{prev}} \\vert$  
+        * True Range (TR): $\\text{TR} = \\max(\\text{TR}_1, \\text{TR}_2, \\text{TR}_3)$  
+        * ATR: The 14-period simple moving average of the TR values: $\\text{ATR} = \\text{SMA}_{14}(\\text{TR})$
+
+        **1.3. Simple Moving Averages (SMA)**  
+        The application utilizes a 50-day ($\\text{SMA}_{50}$) and a 200-day ($\\text{SMA}_{200}$) simple moving average to determine long-term and medium-term trends:  
+        $$\\text{SMA}_n = \\frac{1}{n} \\sum_{i=0}^{n-1} \\text{Close}_{t-i}$$  
+        If the current price is above $\\text{SMA}_{200}$, the market is evaluated as having a long-term bullish trend (`is_bullish_trend = True`).
+
+        #### 2. Profit Potential Calculation and Filtering
+        **2.1. Gain per 1 USD Invested (`zisk_na_1_usd`)**  
+        This metric quantifies the room left for the price to reach a recent 20-day high:  
+        * 20-day Peak ($\\text{Peak}_{20}$): $\\text{Peak}_{20} = \\max(\\text{Close}_{t-19}, \\dots, \\text{Close}_t)$  
+        * Difference in USD ($\\text{Difference}$): $\\text{Difference} = \\text{Peak}_{20} - \\text{Actual Price}$  
+        * Gain per 1 USD ($\\text{Gain}$): $\\text{Gain} = \\frac{\\text{Difference}}{\\text{Actual Price}}$  
+        *(Note: If $\\text{Actual Price} \\le 0$, the value is set to $0$).*  
+        *Quick Filter (`filter_high_gain`):* When active, the application filters out any assets that do not meet the condition $\\text{Gain} \\ge 0.08\\,\\text{USD}$.
+
+        #### 3. Trading Setups (Long & Short Strategies)
+        The application dynamically generates price levels for entry and risk management using the current price ($\\text{Price}$) and volatility measured by ATR:  
+        * **LONG SETUP (Bullish Strategy):**  
+          * Ideal Entry ($\\text{Entry}_{\\text{Long}}$): $\\text{Price}$  
+          * Stop Loss ($\\text{SL}_{\\text{Long}}$): $\\text{Price} - (1.5 \\times \\text{ATR})$  
+          * Take Profit ($\\text{TP}_{\\text{Long}}$): $\\text{Price} + (2.5 \\times \\text{ATR})$  
+        * **SHORT SETUP (Bearish Strategy):**  
+          * Ideal Entry ($\\text{Entry}_{\\text{Short}}$): $\\text{Price}$  
+          * Stop Loss ($\\text{SL}_{\\text{Short}}$): $\\text{Price} + (1.5 \\times \\text{ATR})$  
+          * Take Profit ($\\text{TP}_{\\text{Short}}$): $\\text{Price} - (2.5 \\times \\text{ATR})$
+
+        #### 4. Crowd Psychology Analysis
+        The application monitors trading volume (`Volume`) against its 30-day moving average ($\\text{Volume}_{\\text{avg30}}$):  
+        * **Crowd Buying (`crowd_buying`):** Triggered if the current volume is greater than twice the average and the price has increased compared to the previous day:  
+          $$\\text{Volume} > (2.0 \\times \\text{Volume}_{\\text{avg30}}) \\quad \\land \\quad \\text{Close}_t > \\text{Close}_{t-1}$$  
+        * **Crowd Panic (`crowd_panicking`):** Triggered during high volume combined with a price drop:  
+          $$\\text{Volume} > (2.0 \\times \\text{Volume}_{\\text{avg30}}) \\quad \\land \\quad \\text{Close}_t < \\text{Close}_{t-1}$$
+
+        #### 5. AI Trend Prediction and Scoring System
+        * **AI Score (`ai_score`):** Starts at $0$. If $\\text{Price} > \\text{SMA}_{50}$, adds $1$; otherwise subtracts $1$. If $\\text{RSI} < 35$, adds $1$ (oversold / buying opportunity); if $\\text{RSI} > 65$, subtracts $1$.  
+        * **Quantitative Direction:**  
+          * $\\text{ai\\_score} > 0 \\rightarrow$ 📈 BULLISH (Confidence: $75\\%$)  
+          * $\\text{ai\\_score} < 0 \\rightarrow$ 📉 BEARISH (Confidence: $75\\%$)  
+          * $\\text{ai\\_score} == 0 \\rightarrow$ ⚖️ NEUTRAL (Confidence: $50\\%$)  
+        * **Machine Learning (Prophet):** Uses the Prophet library time-series model with yearly seasonality (`yearly_seasonality=True`) to predict the future price (`yhat`) 20 days ahead ($\\text{PRED\\_DAYS} = 20$).
+
+        #### 6. News Sentiment Analysis
+        The application evaluates the latest 5 news headlines (`news`) using keyword matching:  
+        * **Bearish keywords:** `sue`, `lawsuit`, `fine`, `penalty`, `drop`, `plunge`, `decline`, `crash`, `loss` (each decreases the score by $1$).  
+        * **Bullish keywords:** `surge`, `jump`, `rally`, `growth`, `record`, `profit`, `beat`, `strong`, `gain` (each increases the score by $1$).  
+        * **Result:** Score $> 0 \\rightarrow$ 📈 BULLISH, Score $< 0 \\rightarrow$ 📉 BEARISH, Score $0 \\rightarrow$ ➖ NEUTRAL.
+        """)
+
+    with st.expander("☕ 4. Creator Support"):
         st.markdown("You can find the **Creator Support** section at the bottom of the left sidebar.")
 
 app_mode = st.radio("Select display mode:", [
@@ -195,7 +263,6 @@ if app_mode == "📊 Market Scanning & Overview":
                         rozdil_usd = vrchol_20d - skutecna_cena
                         zisk_na_1_usd = rozdil_usd / skutecna_cena if skutecna_cena > 0 else 0
 
-                        # Zde opraveno z 0.8 na 0.08 v podmínce filtru
                         if filter_high_gain and zisk_na_1_usd < 0.08:
                             continue
 
@@ -347,7 +414,6 @@ if app_mode == "📊 Market Scanning & Overview":
                     except Exception as e:
                         st.error(f"Error processing {ticker}: {e}")
                 
-                # Zde upraveno varování taktéž na 0.08
                 if filter_high_gain and analyzed_count == 0:
                     st.warning("⚠️ No assets currently match the filter criteria (Gain / 1 USD ≥ 0.08). Try turning off the filter.")
 

@@ -491,3 +491,21 @@ st.sidebar.markdown(
     "<p style='font-size: 0.9em; color: gray;'>If this app brings you value or profits, buy me a coffee! ☕</p>", 
     unsafe_allow_html=True
 )
+
+
+from klondike_agent import KlondikeExecutionAgent
+
+# Předpokládejme, že v proměnné 'df_vysledky' máte data z vašeho skeneru
+# Příklad: df_vysledky = ... (vaše tabulka)
+
+if st.button("🚀 Spustit automatické obchody přes IBKR"):
+    if 'df_vysledky' in locals() and not df_vysledky.empty:
+        with st.spinner("Probíhá odesílání příkazů na Interactive Brokers..."):
+            try:
+                agent = KlondikeExecutionAgent(host='127.0.0.1', port=7497)
+                agent.process_scanner_results(df_vysledky)
+                st.success("Obchodní dávka byla úspěšně zpracována!")
+            except Exception as e:
+                st.error(f"Chyba při komunikaci s brokerem: {e}")
+    else:
+        st.warning("Nejprve musíte spustit skener a získat výsledky v tabulce.")

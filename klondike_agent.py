@@ -43,7 +43,7 @@ class KlondikeExecutionAgent:
             print("[INFO] Žádná aktivní akcie nesplňuje požadovaná kritéria (Gain >= 0.08 USD).")
             return
 
-        print(nalezeno {len(qualified_assets)} vhodných aktiv k obchodování. Spouštím exekuci...)
+        print(f"Nalezeno {len(qualified_assets)} vhodných aktiv k obchodování. Spouštím exekuci...")
 
         self.connect()
 

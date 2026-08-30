@@ -1,4 +1,4 @@
-from klondike_agent.py import KlondikeExecutionAgent
+from klondike_agent import KlondikeExecutionAgent
 import streamlit as st
 import yfinance as yf
 import pandas as pd

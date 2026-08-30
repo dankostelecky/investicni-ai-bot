@@ -4,3 +4,4 @@ pandas
 prophet
 matplotlib
 supabase
+ib_insync

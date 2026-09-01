@@ -24,7 +24,7 @@ except Exception as e:
 st.sidebar.markdown("### 🔍 Custom Asset Search")
 custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
 
-DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "GLD", "BTC-USD", "VT", "^GSPC", "ETH-USD", "SOL-USD", "QQQ", "SPY", "XRP-USD", "BNB-USD", "LINK-USD", "AVAX-USD"]
+DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "CSPX.L", "ASML", "NVDA", "AMD", "NFLX", "AMD", "INTC", "KO", "JPM", "XOM", "JNJ", "SPY", "V", "DIS", "BAC", "PLTR", "PFE", "NKE", "PYPL", "IBM", "UBER", "WMT"]
 
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:

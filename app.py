@@ -170,7 +170,7 @@ def render_user_manual():
         st.markdown("- **📈 AI Quantitative Trend:** Trend evaluation and price direction prediction.")
         st.markdown("- **💡 Investment Advice:** Immediate recommendation whether to enter, wait, or avoid.")
         st.markdown("- **🟢 Long Setup & 🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit.")
-        st.markdown("- **🔥 Market Capitulation / Flush:** Detects stop-loss sweeps and margin call liquidations before entering dips.")
+        st.markdown("- **🔥 Market Capitulation / Margin Call Flush:** Detects stop-loss sweeps and forced liquidations before entering dips.")
 
     with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
         st.markdown("This section details the mathematical formulas, RSI, ATR, and margin call flush logic utilized by the scanner.")
@@ -244,7 +244,10 @@ if app_mode == "📊 Market Scanning & Overview":
                         flush_drop = (float(data['High'].iloc[-1]) - skutecna_cena) > (1.5 * atr_val)
                         is_recovering = skutecna_cena >= float(data['Open'].iloc[-1])
 
-                        if vol_spike and flush_drop and is_recovering:
+                        # Sjednocená detekce výplachu stop-lossů a margin callů
+                        is_flushed = rsi_val < 30 or (vol_spike and flush_drop and is_recovering)
+
+                        if is_flushed:
                             capitulation_status = "🚨 **MARKET CAPITULATION (MARGIN CALL FLUSH):** Massive stop-loss cascade and forced liquidations flushed weak hands. Liquidity wiped out, ideal dip-buying window!"
                             capitulation_state_type = "success"
                         elif crowd_panicking:
@@ -282,7 +285,7 @@ if app_mode == "📊 Market Scanning & Overview":
                             market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
                             advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER**"
                             advice_color = "error"
-                        elif rsi_val < 30 or (vol_spike and flush_drop and is_recovering):
+                        elif is_flushed:
                             market_state_text = "🟢 **OVERSOLD / FLUSHED:** Asset is heavily discounted after a margin call flush."
                             advice_action = "🚀 **RECOMMENDATION: ENTER LONG (POST-FLUSH)**"
                             advice_color = "success"

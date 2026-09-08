@@ -1,4 +1,3 @@
-from klondike_agent import KlondikeExecutionAgent
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -7,6 +6,12 @@ from prophet import Prophet
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
+
+# Definice chybějící třídy pro Klondike Agent
+class KlondikeExecutionAgent:
+    def __init__(self):
+        self.status = "Online & Ready"
+        self.protocols = ["Dual Long/Short Hedging", "Dynamic Volatility Guard", "Sentiment Feed Integrator"]
 
 st.set_page_config(page_title="Klondike AI Investment Scanner", page_icon="🤖", layout="wide")
 
@@ -172,7 +177,7 @@ def render_user_manual():
         st.markdown("- **🟢 Long Setup & 🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit.")
         st.markdown("- **🔥 Market Capitulation / Margin Call Flush:** Detects stop-loss sweeps and forced liquidations before entering dips.")
 
-with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
+    with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
         st.markdown(r"""
         ### Professional User Manual: Klondike AI Investment Scanner
         This manual details the mathematical formulas, logical rules, and algorithms used by the Klondike AI Investment Scanner application to calculate various items, financial metrics, technical indicators, and trading scenarios.
@@ -241,6 +246,7 @@ with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
         * **Bullish keywords:** `surge`, `jump`, `rally`, `growth`, `record`, `profit`, `beat`, `strong`, `gain` (each increases the score by $1$).  
         * **Result:** Score $> 0 \rightarrow$ 📈 BULLISH, Score $< 0 \rightarrow$ 📉 BEARISH, Score $0 \rightarrow$ ➖ NEUTRAL.
         """)
+        
     with st.expander("☕ 4. Creator Support"):
         st.markdown("You can find the **Creator Support** section at the bottom of the left sidebar.")
 
@@ -310,7 +316,6 @@ if app_mode == "📊 Market Scanning & Overview":
                         flush_drop = (float(data['High'].iloc[-1]) - skutecna_cena) > (1.5 * atr_val)
                         is_recovering = skutecna_cena >= float(data['Open'].iloc[-1])
 
-                        # Sjednocená detekce výplachu stop-lossů a margin callů
                         is_flushed = rsi_val < 30 or (vol_spike and flush_drop and is_recovering)
 
                         if is_flushed:

@@ -172,7 +172,7 @@ def render_user_manual():
         st.markdown("- **🟢 Long Setup & 🔴 Short Setup:** Recommended ideal entry, stop loss, and take profit.")
         st.markdown("- **🔥 Market Capitulation / Margin Call Flush:** Detects stop-loss sweeps and forced liquidations before entering dips.")
 
- with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
+with st.expander("📐 3. Professional User Manual (Formulas & Algorithms)"):
         st.markdown(r"""
         ### Professional User Manual: Klondike AI Investment Scanner
         This manual details the mathematical formulas, logical rules, and algorithms used by the Klondike AI Investment Scanner application to calculate various items, financial metrics, technical indicators, and trading scenarios.
@@ -241,7 +241,6 @@ def render_user_manual():
         * **Bullish keywords:** `surge`, `jump`, `rally`, `growth`, `record`, `profit`, `beat`, `strong`, `gain` (each increases the score by $1$).  
         * **Result:** Score $> 0 \rightarrow$ 📈 BULLISH, Score $< 0 \rightarrow$ 📉 BEARISH, Score $0 \rightarrow$ ➖ NEUTRAL.
         """)
-
     with st.expander("☕ 4. Creator Support"):
         st.markdown("You can find the **Creator Support** section at the bottom of the left sidebar.")
 

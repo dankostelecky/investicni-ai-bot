@@ -10,7 +10,7 @@ from supabase import create_client, Client
 
 st.set_page_config(page_title="Klondike AI Investment Scanner", page_icon="🤖", layout="wide")
 
-st.title("🤖 Klondike AI Investment Scanner (News + Crowd + AI Learning + Custom Search)")
+st.title("🤖 AI Investment Scanner")
 st.write("This application analyzes markets, monitors crowd psychology, calculates dual Long/Short scenarios, and learns from history using a database.")
 
 try:

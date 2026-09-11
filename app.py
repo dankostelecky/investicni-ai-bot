@@ -10,14 +10,14 @@ from supabase import create_client, Client
 # Definice chybějící třídy pro Klondike Agent
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Online & Ready"
-        self.protocols = ["Dual Long/Short Hedging", "Dynamic Volatility Guard", "Sentiment Feed Integrator"]
+        self.status = "Online & Ready (Spot Only)"
+        self.protocols = ["Spot Trend Following", "Dynamic Volatility Guard", "Sentiment Feed Integrator"]
 
 # Nastavení vzhledu stránky
-st.set_page_config(page_title="Klondike AI Investment Scanner", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Klondike Spot Swing Scanner", page_icon="📈", layout="wide")
 
-st.title("🤖 AI Investment Scanner")
-st.write("Professional market analytics, automated risk calculation, and swing trading execution hub.")
+st.title("📈 AI Spot Swing Scanner")
+st.write("Professional market analytics and automated risk calculation strictly for unleveraged stock trading.")
 
 # Inicializace databáze Supabase
 try:
@@ -30,7 +30,7 @@ except Exception as e:
 
 # Postranní panel pro vlastní akcie a filtry
 st.sidebar.markdown("### 🔍 Custom Asset Search")
-custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL, CZG.PR):", "").upper().strip()
+custom_ticker_input = st.sidebar.text_input("Add ticker (e.g. NFLX, AAPL):", "").upper().strip()
 
 DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "ASML", "NVDA", "NFLX", "AMD", "INTC", "KO", "JPM", "XOM", "JNJ", "SPY", "V", "DIS", "BAC", "PLTR", "PFE", "NKE", "PYPL", "IBM", "UBER", "WMT"]
 
@@ -43,6 +43,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Quick Filters")
 filter_high_gain = st.sidebar.toggle("🔥 Show only Gain ≥ 0.08 USD", value=False)
 filter_safe_earnings = st.sidebar.toggle("🛡️ Hide stocks with Earnings < 7 days", value=False)
+filter_outperforming = st.sidebar.toggle("🚀 Show only Outperforming S&P 500", value=False)
 
 PRED_DAYS = 20
 
@@ -55,7 +56,7 @@ def calculate_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
 
-# Výpočet ATR (Average True Range) pro volatilitu a Stop-Loss
+# Výpočet ATR (Average True Range)
 def calculate_atr(data, window=14):
     high = data['High']
     low = data['Low']
@@ -67,10 +68,18 @@ def calculate_atr(data, window=14):
     atr = tr.rolling(window=window).mean()
     return float(atr.iloc[-1])
 
-# Návrh 1: Zjištění data nejbližších výsledků (Earnings) pro ochranu před gap riskem
+# Nové: Výpočet MACD (Moving Average Convergence Divergence)
+def calculate_macd(data):
+    exp1 = data['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=26, adjust=False).mean()
+    macd = exp1 - exp2
+    signal = macd.ewm(span=9, adjust=False).mean()
+    hist = macd - signal
+    return float(macd.iloc[-1]), float(signal.iloc[-1]), float(hist.iloc[-1])
+
+# Zjištění data nejbližších výsledků (Earnings)
 def get_next_earnings_days(ticker_obj):
     try:
-        # Pokus o získání kalendáře z yfinance
         cal = ticker_obj.calendar
         if cal is not None and isinstance(cal, dict) and 'Earnings Date' in cal:
             dates = cal['Earnings Date']
@@ -98,7 +107,7 @@ def analyze_news_sentiment(ticker_obj):
             return "➖ (No fresh news)", "Available headlines not found"
         
         bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss"]
-        bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain"]
+        bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain", "buy"]
         
         score = 0
         latest_headline = "Unknown headline"
@@ -121,12 +130,12 @@ def analyze_news_sentiment(ticker_obj):
 
 # Správa autonomního agenta Klondike
 def render_klondike_agent_execution_hub():
-    st.subheader("🤖 Klondike Autonomous Execution Agent Hub")
-    st.markdown("Monitor automated execution routines, live agent triggers, and algorithmic portfolio balancing parameters.")
+    st.subheader("🤖 Klondike Spot Execution Agent Hub")
+    st.markdown("Monitor automated unleveraged portfolio balancing and swing entry protocols.")
     
     agent = KlondikeExecutionAgent()
     agent_status = getattr(agent, "status", "Online & Ready")
-    active_protocols = getattr(agent, "protocols", ["Dual Long/Short Hedging", "Dynamic Volatility Guard", "Sentiment Feed Integrator"])
+    active_protocols = getattr(agent, "protocols", ["Spot Trend Following", "Dynamic Volatility Guard", "Sentiment Feed Integrator"])
     
     col_status, col_metrics = st.columns([1, 1])
     
@@ -142,57 +151,30 @@ def render_klondike_agent_execution_hub():
         
     st.markdown("---")
     st.markdown("### ⚡ Manual Agent Override & Trigger Console")
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("🚀 Force Immediate Agent Re-Balancing", use_container_width=True):
-            st.toast("Agent re-balancing sequence initiated successfully!", icon="🤖")
-    with col_btn2:
-        if st.button("🛑 Emergency Halt All Active Trades", type="primary", use_container_width=True):
-            st.error("⚠️ Emergency Halt Protocol engaged. All automated positions suspended.")
-
-# Přehled politických a insider transakcí
-def render_trump_and_political_trades():
-    st.subheader("🏛️ Donald Trump & Family Asset Transactions")
-    st.write("Overview of tracked transactions and asset disclosures reported in official government registries.")
-
-    trump_data = [
-        {"Date": "2026-06-18", "Asset": "Berkshire Hathaway (BRK-B)", "Type": "Purchase", "Estimated Value": "$1M - $5M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-23", "Asset": "Visa Inc (V)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-24", "Asset": "Mastercard (MA)", "Type": "Purchase", "Estimated Value": "$500K - $1M", "Status": "Active Portfolio"},
-        {"Date": "2026-06-03", "Asset": "Palantir (PLTR)", "Type": "Buy/Sell", "Estimated Value": "$15K - $50K", "Status": "Rotated / Traded"},
-        {"Date": "2025-04-08", "Asset": "Big Tech Basket (AAPL, MSFT, GOOGL)", "Type": "Large Purchase", "Estimated Value": "$12.8M total", "Status": "Core Holding"}
-    ]
-    
-    df_trump = pd.DataFrame(trump_data)
-    st.dataframe(df_trump, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### 🔗 Official Sources & Public Disclosures (Free Access)")
-    st.markdown("- 🇺🇸 [U.S. Office of Government Ethics (OGE) Official Search](https://www.oge.gov/web/oge.nsf/Officials%20Individual%20Disclosures%20Search%20Collection?OpenForm)")
-    st.markdown("- 📊 [ProPublica Trump & Appointees Financial Disclosures Database](https://projects.propublica.org/trump-team-financial-disclosures/)")
-    st.markdown("- 🏛️ [U.S. Senate Electronic Financial Disclosure (eFD) System](https://efd.senate.gov/)")
+    if st.button("🚀 Force Immediate Portfolio Synchronization", use_container_width=True):
+        st.toast("Agent re-balancing sequence initiated successfully!", icon="🤖")
 
 # Uživatelský manuál
 def render_user_manual():
-    st.subheader("📘 Klondike AI Investment Scanner: User Manual")
-    st.markdown("Welcome to the guide for Klondike AI Investment Scanner. Enhanced with professional risk management and earnings filters.")
+    st.subheader("📘 Spot Swing Scanner: User Manual")
+    st.markdown("Welcome to the guide tailored for **unleveraged spot trading**. No shorting, no margin, just high-quality blue-chip swing setups.")
 
     with st.expander("📖 1. How to Launch and Control the App"):
-        st.markdown("1. **Market Scanning:** Scan large-cap tickers, apply profit filters and earnings safety guards.")
-        st.markdown("2. **Position Sizing:** Calculate precise share amounts based on your total capital and 1-2% risk tolerance.")
-        st.markdown("3. **SMA Bounces:** Automatically detect high-probability setups testing the 50-day moving average.")
+        st.markdown("1. **Market Scanning:** Scan large-cap tickers and filter for safe, outperforming stocks.")
+        st.markdown("2. **Position Sizing:** Calculate precise share amounts based on your total cash capital.")
+        st.markdown("3. **SMA Bounces & MACD:** Find pullbacks to the 50-day average supported by momentum (MACD).")
 
-    with st.expander("📐 2. Professional Trading Features Added"):
-        st.markdown("- **Earnings Blackout Protection:** Automatically flags or hides tickers reporting earnings within 7 days to prevent gap risks.")
-        st.markdown("- **Dynamic Position Sizing:** Computes exact shares to buy matching your customized risk budget.")
-        st.markdown("- **SMA 50 Bounce Detector:** Highlights structural pullbacks to the medium-term trend line.")
+    with st.expander("📐 2. Spot Trading Features Explain"):
+        st.markdown("- **Relative Strength (vs S&P 500):** Shows if the stock is growing faster than the broader market over the last 30 days.")
+        st.markdown("- **Distance from 52W High:** Highlights if the stock is in a healthy pullback near all-time highs.")
+        st.markdown("- **MACD Histogram:** Green histogram indicates bullish momentum returning after a dip.")
+        st.markdown("- **Earnings Blackout:** Hides tickers reporting earnings soon to protect cash positions.")
 
-# Hlavní přepínání záložek aplikace
+# Hlavní přepínání záložek
 app_mode = st.radio("Select display mode:", [
     "📊 Market Scanning & Overview", 
     "🧠 AI Accuracy & History", 
     "🤖 Klondike Agent Hub",
-    "🏛️ Trump & Insider Trades",
     "📘 User Manual"
 ], horizontal=True)
 
@@ -200,20 +182,28 @@ if app_mode == "📊 Market Scanning & Overview":
     col_main, col_insiders = st.columns([2.3, 1.2])
 
     with col_main:
-        if st.button("🚀 Run Market Analysis & Save Predictions", type="primary"):
-            with st.spinner("Downloading data, running AI, and updating database..."):
+        if st.button("🚀 Run Spot Market Analysis", type="primary"):
+            with st.spinner("Downloading data, calculating MACD, and updating AI..."):
                 try:
                     sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                     if isinstance(sp500.columns, pd.MultiIndex):
                         sp500.columns = sp500.columns.get_level_values(0)
                     sp500_close = float(sp500['Close'].iloc[-1])
                     sp500_sma50 = float(sp500['Close'].rolling(window=50).mean().iloc[-1])
+                    
+                    # Výpočet měsíčního zhodnocení S&P 500 pro Relativní sílu
+                    if len(sp500) >= 30:
+                        sp500_30d_return = (sp500_close - float(sp500['Close'].iloc[-30])) / float(sp500['Close'].iloc[-30]) * 100
+                    else:
+                        sp500_30d_return = 0
+
                     if sp500_close < sp500_sma50:
-                        st.warning("⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (market under pressure).")
+                        st.warning("⚠️ MACRO WARNING: S&P 500 is below its 50-day moving average (cash is safer).")
                     else:
                         st.success("🌍 MACRO STATUS: S&P 500 is in a positive trend.")
                 except:
                     st.info("🌍 Macro status could not be verified.")
+                    sp500_30d_return = 0
 
             analyzed_count = 0
             for ticker in active_tickers:
@@ -234,11 +224,20 @@ if app_mode == "📊 Market Scanning & Overview":
                     if filter_high_gain and zisk_na_1_usd < 0.08:
                         continue
 
-                    # Získání informací o výsledcích
                     earnings_days, earnings_date_str = get_next_earnings_days(t_obj)
 
-                    # Návrh 1: Filtr na bezpečné výsledky (Earnings Blackout)
                     if filter_safe_earnings and earnings_days <= 7:
+                        continue
+
+                    # Nové: Výpočet vzdálenosti od 52týdenního maxima
+                    high_52w = float(data['High'].max())
+                    dist_52w_pct = ((high_52w - skutecna_cena) / high_52w) * 100
+
+                    # Nové: Relativní síla vůči S&P 500 (za 30 dní)
+                    asset_30d_return = (skutecna_cena - float(data['Close'].iloc[-30])) / float(data['Close'].iloc[-30]) * 100
+                    rs_vs_sp500 = asset_30d_return - sp500_30d_return
+
+                    if filter_outperforming and rs_vs_sp500 < 0:
                         continue
 
                     analyzed_count += 1
@@ -246,70 +245,61 @@ if app_mode == "📊 Market Scanning & Overview":
                     news_sentiment, latest_headline = analyze_news_sentiment(t_obj)
                     rsi_val = calculate_rsi(data)
                     atr_val = calculate_atr(data)
+                    macd_line, macd_signal, macd_hist = calculate_macd(data)
+                    
                     sma_50 = float(data['Close'].rolling(window=50).mean().iloc[-1]) if len(data) >= 50 else float(data['Close'].mean())
                     sma_200 = float(data['Close'].rolling(window=200).mean().iloc[-1]) if len(data) >= 200 else float(data['Close'].mean())
                     
-                    # Návrh 3: Detekce odrazu od SMA 50 v rostoucím trendu
                     distance_to_sma50_pct = abs(skutecna_cena - sma_50) / sma_50 * 100
-                    is_sma50_bounce = distance_to_sma50_pct < 1.5 and skutecna_cena > sma_50
-
-                    predchozi_cena = float(data['Close'].iloc[-2])
-                    current_volume = float(data['Volume'].iloc[-1])
-                    avg_volume_30d = float(data['Volume'].rolling(window=30).mean().iloc[-1])
-                    
-                    vol_spike = current_volume > (avg_volume_30d * 3.0)
-                    flush_drop = (float(data['High'].iloc[-1]) - skutecna_cena) > (1.5 * atr_val)
-                    is_recovering = skutecna_cena >= float(data['Open'].iloc[-1])
-                    is_flushed = rsi_val < 30 or (vol_spike and flush_drop and is_recovering)
+                    is_sma50_bounce = distance_to_sma50_pct < 2.0 and skutecna_cena > sma_50
 
                     is_bullish_trend = skutecna_cena > sma_200
                     potencial_procent = (rozdil_usd / skutecna_cena) * 100
 
+                    # Skórování uzpůsobeno na spotové nákupy
                     ai_score = 0
                     if skutecna_cena > sma_50: ai_score += 1
                     else: ai_score -= 1
+                    
+                    if rs_vs_sp500 > 0: ai_score += 1 # Prémium za překonávání trhu
+                    if macd_hist > 0: ai_score += 1   # Pozitivní momentum
 
                     if rsi_val < 35: ai_score += 1
                     elif rsi_val > 65: ai_score -= 1
 
-                    if ai_score > 0:
-                        quantitative_direction = "📈 BULLISH (UPWARD TREND)"
-                        confidence = 75
+                    if ai_score > 1:
+                        quantitative_direction = "📈 STRONG BULLISH (Ideal for Swing)"
+                        confidence = 80
+                    elif ai_score == 1:
+                        quantitative_direction = "↗️ MILD BULLISH"
+                        confidence = 65
                     elif ai_score < 0:
-                        quantitative_direction = "📉 BEARISH (DOWNWARD TREND)"
+                        quantitative_direction = "📉 BEARISH (Avoid Spot Purchase)"
                         confidence = 75
                     else:
-                        quantitative_direction = "⚖️ NEUTRAL (SIDEWAYS)"
+                        quantitative_direction = "⚖️ NEUTRAL / CONSOLIDATION"
                         confidence = 50
 
                     if rsi_val > 70:
-                        market_state_text = "🔴 **OVERBOUGHT:** The market is extremely high, correction risk is elevated."
-                        advice_action = "⏳ **RECOMMENDATION: WAIT / DO NOT ENTER**"
+                        market_state_text = "🔴 **OVERBOUGHT:** Correction risk is high. Do not buy."
+                        advice_action = "⏳ **RECOMMENDATION: WAIT**"
                         advice_color = "error"
-                    elif is_flushed:
-                        market_state_text = "🟢 **OVERSOLD / FLUSHED:** Asset is heavily discounted after a margin call flush."
-                        advice_action = "🚀 **RECOMMENDATION: ENTER LONG (POST-FLUSH)**"
-                        advice_color = "success"
-                    elif is_sma50_bounce:
-                        market_state_text = "🎯 **SMA 50 BOUNCE SETUP:** Price is testing the crucial 50-day moving average in an uptrend."
-                        advice_action = "✅ **RECOMMENDATION: HIGH-PROBABILITY SWING ENTRY**"
+                    elif is_sma50_bounce and macd_hist > 0:
+                        market_state_text = "🎯 **PERFECT SWING SETUP:** Price testing SMA50 with positive MACD momentum!"
+                        advice_action = "✅ **RECOMMENDATION: ENTER LONG (SPOT)**"
                         advice_color = "success"
                     elif is_bullish_trend and rsi_val <= 60 and rsi_val >= 40:
-                        market_state_text = "🟡 **HEALTHY TREND:** Market is growing within a reasonable band."
-                        advice_action = "✅ **RECOMMENDATION: SUITABLE FOR GRADUAL ENTRY (DCA)**"
+                        market_state_text = "🟡 **HEALTHY TREND:** Accumulation zone."
+                        advice_action = "✅ **RECOMMENDATION: GRADUAL BUY (DCA)**"
                         advice_color = "success"
                     else:
-                        market_state_text = "⚖️ **INDECISIVE / SIDEWAYS MARKET:** Lacks clear strong momentum."
-                        advice_action = "⏳ **RECOMMENDATION: WAIT**"
+                        market_state_text = "⚖️ **INDECISIVE:** Lacks clear strong momentum for a swing trade."
+                        advice_action = "⏳ **RECOMMENDATION: KEEP CASH**"
                         advice_color = "info"
 
                     long_entry = skutecna_cena
                     long_stop_loss = skutecna_cena - (1.5 * atr_val)
                     long_take_profit = skutecna_cena + (2.5 * atr_val)
-
-                    short_entry = skutecna_cena
-                    short_stop_loss = skutecna_cena + (1.5 * atr_val)
-                    short_take_profit = skutecna_cena - (2.5 * atr_val)
 
                     df = data.reset_index()[['Date', 'Close']]
                     df.columns = ['ds', 'y']
@@ -319,7 +309,6 @@ if app_mode == "📊 Market Scanning & Overview":
                     model.fit(df)
                     future = model.make_future_dataframe(periods=PRED_DAYS)
                     forecast = model.predict(future)
-
                     predicted_price_20d = float(forecast.iloc[-1]['yhat'])
                     target_date = forecast.iloc[-1]['ds'].strftime('%Y-%m-%d')
 
@@ -334,20 +323,31 @@ if app_mode == "📊 Market Scanning & Overview":
                         except Exception:
                             pass
 
-                    # Vizuálně čistý rozbalovací box pro každou akcii
-                    with st.expander(f"Analysis for: {ticker} | Price: ${skutecna_cena:.2f} | Gain/USD: +{zisk_na_1_usd:.2f}"):
+                    # Karta akcie přizpůsobená pro spotové obchodování
+                    with st.expander(f"Analysis for: {ticker} | Price: ${skutecna_cena:.2f} | RS vs S&P500: {rs_vs_sp500:.1f}%"):
                         col1, col2, col3 = st.columns(3)
+                        
+                        # Sloupec 1: Základy
+                        col1.markdown("**Technical Base**")
                         col1.metric("Current Price", f"${skutecna_cena:.2f}")
-                        col2.metric("RSI (14)", f"{rsi_val:.1f}")
-                        col3.metric("Gain / 1 USD Invested", f"+{zisk_na_1_usd:.2f} USD")
+                        col1.metric("RSI (14)", f"{rsi_val:.1f}")
+                        
+                        # Sloupec 2: Momentum
+                        col2.markdown("**Momentum**")
+                        macd_color = "🟢 Positive" if macd_hist > 0 else "🔴 Negative"
+                        col2.metric("MACD Hist", f"{macd_hist:.2f}", delta=macd_color, delta_color="off")
+                        col2.metric("Gain / 1 USD Invested", f"+{zisk_na_1_usd:.2f} USD")
+                        
+                        # Sloupec 3: Relativní síla
+                        col3.markdown("**Sector Strength**")
+                        rs_color = "🟢 Outperforming" if rs_vs_sp500 > 0 else "🔴 Underperforming"
+                        col3.metric("vs S&P 500 (30d)", f"{rs_vs_sp500:.2f}%", delta=rs_color, delta_color="off")
+                        col3.metric("Off 52W High", f"-{dist_52w_pct:.1f}%")
 
                         st.markdown("---")
-                        if is_sma50_bounce:
-                            st.success("🎯 **SWING SETUP ALERT:** Price is bouncing right off the 50-day SMA in an uptrend!")
-
-                        st.info(f"🤖 **AI Quantitative Direction:** {quantitative_direction} (Confidence: {confidence}%)")
+                        st.info(f"🤖 **AI Direction:** {quantitative_direction} (Confidence: {confidence}%)")
                         
-                        st.markdown("### 💡 Investment Advice for Trader:")
+                        st.markdown("### 💡 Spot Investment Advice:")
                         st.markdown(market_state_text)
                         if advice_color == "success":
                             st.success(advice_action)
@@ -356,70 +356,63 @@ if app_mode == "📊 Market Scanning & Overview":
                         else:
                             st.info(advice_action)
 
-                        col_long, col_short = st.columns(2)
-                        with col_long:
-                            st.markdown("#### 🟢 LONG SETUP (Bullish Strategy)")
-                            st.success(f"**Ideal Entry:** ${long_entry:.2f}")
-                            st.metric("🛡️ Stop Loss (Long)", f"${long_stop_loss:.2f}")
-                            st.metric("🎯 Take Profit (Long)", f"${long_take_profit:.2f}")
-
-                        with col_short:
-                            st.markdown("#### 🔴 SHORT SETUP (Bearish Strategy)")
-                            st.error(f"**Ideal Entry:** ${short_entry:.2f}")
-                            st.metric("🛡️ Stop Loss (Short)", f"${short_stop_loss:.2f}")
-                            st.metric("🎯 Take Profit (Short)", f"${short_take_profit:.2f}")
+                        # Odstraněn Short, zvětšen prostor pro Long
+                        st.markdown("#### 🟢 SPOT SWING SETUP (Buy & Hold)")
+                        col_entry, col_sl, col_tp = st.columns(3)
+                        col_entry.success(f"**Ideal Entry:**\n${long_entry:.2f}")
+                        col_sl.warning(f"**Protective Stop Loss:**\n${long_stop_loss:.2f}")
+                        col_tp.info(f"**Target Take Profit:**\n${long_take_profit:.2f}")
 
                         st.markdown("---")
-                        
-                        # Návrh 2: Integrovaná kalkulačka velikosti pozice (Position Sizing) přímo v kartě akcie
-                        st.markdown("#### 💰 Position Sizing & Risk Calculator")
+                        st.markdown("#### 💰 Spot Position Sizing Calculator (No Margin)")
                         col_cap1, col_cap2 = st.columns(2)
                         with col_cap1:
-                            user_capital = st.number_input(f"Total Capital ($) for {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
+                            user_capital = st.number_input(f"Total Cash ($) for {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
                         with col_cap2:
-                            risk_pct = st.slider(f"Risk per Trade (%) for {ticker}:", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
+                            risk_pct = st.slider(f"Risk per Trade (% of Capital):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
 
                         allowed_risk_usd = user_capital * (risk_pct / 100.0)
-                        risk_per_share = 1.5 * atr_val  # Vzdálenost Stop-Lossu odvozená z ATR
+                        risk_per_share = 1.5 * atr_val
                         shares_to_buy = int(allowed_risk_usd / risk_per_share) if risk_per_share > 0 else 0
                         total_position_value = shares_to_buy * skutecna_cena
 
-                        st.info(f"👉 **Execution Plan:** Buy **{shares_to_buy} shares** | **Total Position Value:** `${total_position_value:.2f}` | **Max Risk Exposure:** `${allowed_risk_usd:.2f}`")
+                        # Varování, pokud pozice přesahuje dostupný kapitál
+                        if total_position_value > user_capital:
+                            shares_to_buy = int(user_capital / skutecna_cena)
+                            total_position_value = shares_to_buy * skutecna_cena
+                            st.warning(f"⚠️ Initial calculation exceeded your cash. Adjusted to max affordable shares without margin.")
+
+                        st.info(f"👉 **Execution:** Buy **{shares_to_buy} shares** | **Total Cost:** `${total_position_value:.2f}` | **Max Risk Exposure:** `${allowed_risk_usd:.2f}`")
 
                         st.markdown("---")
                         st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
-                        st.write(f"**Distance to 20d Peak:** +{rozdil_usd:.2f} USD (+{potencial_procent:.2f}%)")
-                        st.write(f"**ATR Volatility:** {atr_val:.2f}")
                         
-                        # Návrh 1: Zobrazení varování před výsledky v UI
                         if earnings_days != 999:
                             if earnings_days <= 7:
-                                st.error(f"⚠️ **WARNING - EARNINGS IN {earnings_days} DAYS:** Reports on {earnings_date_str}. High gap risk! Avoid swing entries.")
+                                st.error(f"⚠️ **EARNINGS IN {earnings_days} DAYS:** ({earnings_date_str}). Gap risk is high. Do not hold spot positions through earnings!")
                             else:
-                                st.info(f"📅 **Next Earnings Season:** {earnings_date_str} (in {earnings_days} days)")
-                        else:
-                            st.write("**Next Earnings Season:** Unscheduled / Unavailable")
-
-                        trend_status = "✅ OK (Bullish vs. SMA200)" if is_bullish_trend else "❌ Below SMA200 (Caution)"
-                        st.write(f"**Long-term Trend:** {trend_status}")
+                                st.info(f"📅 **Next Earnings:** {earnings_date_str} (in {earnings_days} days)")
+                        
+                        trend_status = "✅ Healthy Uptrend" if is_bullish_trend else "❌ Below 200-Day SMA (High Risk)"
+                        st.write(f"**Long-term Trend (SMA 200):** {trend_status}")
 
                         fig, ax = plt.subplots(figsize=(10, 4))
                         model.plot(forecast, ax=ax)
-                        ax.set_title(f"Prediction for {ticker} (20 days ahead)")
+                        ax.set_title(f"20-Day Price Forecast: {ticker}")
                         st.pyplot(fig)
 
                 except Exception as e:
                     st.error(f"Error processing {ticker}: {e}")
             
-            if filter_high_gain and analyzed_count == 0:
-                st.warning("⚠️ No assets currently match the filter criteria. Try turning off filters.")
+            if analyzed_count == 0:
+                st.warning("⚠️ No assets match the current filter criteria. Try adjusting the toggles on the left.")
 
     with col_insiders:
-        st.markdown("### 🏛️ Live Insider Purchases")
-        st.markdown("<p style='font-size: 0.9em; color: gray;'>Tracking recent insider activity for top stocks.</p>", unsafe_allow_html=True)
+        st.markdown("### 🏛️ Top Insider Buys (Spot)")
+        st.markdown("<p style='font-size: 0.9em; color: gray;'>Tracking large-cap spot accumulations.</p>", unsafe_allow_html=True)
         
         insider_data_list = []
-        insider_tickers = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "ASML", "NVDA", "AMD"]
+        insider_tickers = ["META", "MSFT", "GOOGL", "AAPL", "AMZN", "BRK-B", "NVDA"]
         
         for t_sym in insider_tickers:
             try:
@@ -428,66 +421,43 @@ if app_mode == "📊 Market Scanning & Overview":
                 if insiders is not None and not insiders.empty:
                     latest = insiders.iloc[0]
                     insider_data_list.append({
-                        "Ticker": t_sym,
-                        "Insider": str(latest.get('Name', 'N/A')),
-                        "Position": str(latest.get('Position', 'Insider')),
-                        "Action": str(latest.get('Transaction', 'Action')),
-                        "Shares": str(latest.get('Shares', 'N/A'))
+                        "Tick": t_sym,
+                        "Insider": str(latest.get('Name', 'N/A'))[:12],
+                        "Action": str(latest.get('Transaction', 'Action'))
                     })
             except Exception:
                 pass
                 
         if insider_data_list:
             df_insiders = pd.DataFrame(insider_data_list)
-            table_height = len(df_insiders) * 38 + 50
-            st.dataframe(
-                df_insiders, 
-                hide_index=True, 
-                use_container_width=True, 
-                height=table_height
-            )
+            st.dataframe(df_insiders, hide_index=True, use_container_width=True)
         else:
-            st.info("No fresh insider data available at this time.")
+            st.info("No fresh insider data available.")
 
 elif app_mode == "🧠 AI Accuracy & History":
-    st.subheader("🧠 AI Learning & Prediction History (Backtesting)")
-    st.write("This section pulls data from the database and compares past predictions with actual market developments.")
-    
+    st.subheader("🧠 Spot AI Predictions (Backtesting)")
     if supabase:
         try:
             response = supabase.table("predictions").select("*").order("target_date", desc=True).limit(50).execute()
             data_rows = response.data
-            
             if data_rows:
-                df_preds = pd.DataFrame(data_rows)
-                st.dataframe(df_preds, use_container_width=True)
-                st.info("💡 Once the target date (`target_date`) passes, you can review how accurate the AI prediction was compared to the actual market price.")
+                st.dataframe(pd.DataFrame(data_rows), use_container_width=True)
             else:
-                st.warning("No predictions stored in the database yet. Please run an analysis on the main page.")
+                st.warning("No predictions stored yet.")
         except Exception as e:
-            st.error(f"Failed to load history from database: {e}")
+            st.error(f"Database error: {e}")
     else:
-        st.error("Supabase is not connected.")
+        st.error("Supabase not connected.")
 
 elif app_mode == "🤖 Klondike Agent Hub":
     render_klondike_agent_execution_hub()
 
-elif app_mode == "🏛️ Trump & Insider Trades":
-    render_trump_and_political_trades()
-
 elif app_mode == "📘 User Manual":
     render_user_manual()
 
-# Podpora tvůrce v postranním panelu
 st.sidebar.markdown("---")
-st.sidebar.subheader("☕ Support the Creator - David_Seda")
-
+st.sidebar.subheader("☕ Support the Creator")
 try:
     st.sidebar.image("qr_solana.png", width=180)
 except Exception:
-    st.sidebar.info("📌 QR code image not found. Please add 'qr_solana.png' to the project folder.")
-
-st.sidebar.markdown(
-    "<p style='font-size: 0.9em; color: gray;'>If this app brings you value or profits, buy me a coffee! ☕</p>", 
-    unsafe_allow_html=True
-)
+    st.sidebar.info("📌 Add 'qr_solana.png' to your folder.")

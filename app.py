@@ -7,13 +7,11 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# Definice chybějící třídy pro Klondike Agent
 class KlondikeExecutionAgent:
     def __init__(self):
         self.status = "Online & Ready (Spot Only)"
         self.protocols = ["Spot Trend Following", "Dynamic Volatility Guard", "Sentiment Feed Integrator"]
 
-# Nastavení vzhledu stránky
 st.set_page_config(page_title="Klondike Spot Swing Scanner", page_icon="📈", layout="wide")
 
 st.title("📈 AI Spot Swing Scanner")
@@ -47,6 +45,10 @@ filter_outperforming = st.sidebar.toggle("🚀 Show only Outperforming S&P 500",
 
 PRED_DAYS = 20
 
+# Správa stavu aplikace přes st.session_state, aby posuvníky neresetovaly výsledky
+if "analysis_run" not in st.session_state:
+    st.session_state.analysis_run = False
+
 # Výpočet RSI indikátoru
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
@@ -68,7 +70,7 @@ def calculate_atr(data, window=14):
     atr = tr.rolling(window=window).mean()
     return float(atr.iloc[-1])
 
-# Nové: Výpočet MACD (Moving Average Convergence Divergence)
+# Výpočet MACD (Moving Average Convergence Divergence)
 def calculate_macd(data):
     exp1 = data['Close'].ewm(span=12, adjust=False).mean()
     exp2 = data['Close'].ewm(span=26, adjust=False).mean()
@@ -128,7 +130,6 @@ def analyze_news_sentiment(ticker_obj):
     except Exception:
         return "➖ (News unavailable)", "Error loading news"
 
-# Správa autonomního agenta Klondike
 def render_klondike_agent_execution_hub():
     st.subheader("🤖 Klondike Spot Execution Agent Hub")
     st.markdown("Monitor automated unleveraged portfolio balancing and swing entry protocols.")
@@ -154,7 +155,6 @@ def render_klondike_agent_execution_hub():
     if st.button("🚀 Force Immediate Portfolio Synchronization", use_container_width=True):
         st.toast("Agent re-balancing sequence initiated successfully!", icon="🤖")
 
-# Uživatelský manuál
 def render_user_manual():
     st.subheader("📘 Spot Swing Scanner: User Manual")
     st.markdown("Welcome to the guide tailored for **unleveraged spot trading**. No shorting, no margin, just high-quality blue-chip swing setups.")
@@ -164,13 +164,6 @@ def render_user_manual():
         st.markdown("2. **Position Sizing:** Calculate precise share amounts based on your total cash capital.")
         st.markdown("3. **SMA Bounces & MACD:** Find pullbacks to the 50-day average supported by momentum (MACD).")
 
-    with st.expander("📐 2. Spot Trading Features Explain"):
-        st.markdown("- **Relative Strength (vs S&P 500):** Shows if the stock is growing faster than the broader market over the last 30 days.")
-        st.markdown("- **Distance from 52W High:** Highlights if the stock is in a healthy pullback near all-time highs.")
-        st.markdown("- **MACD Histogram:** Green histogram indicates bullish momentum returning after a dip.")
-        st.markdown("- **Earnings Blackout:** Hides tickers reporting earnings soon to protect cash positions.")
-
-# Hlavní přepínání záložek
 app_mode = st.radio("Select display mode:", [
     "📊 Market Scanning & Overview", 
     "🧠 AI Accuracy & History", 
@@ -182,7 +175,12 @@ if app_mode == "📊 Market Scanning & Overview":
     col_main, col_insiders = st.columns([2.3, 1.2])
 
     with col_main:
+        # Tlačítko pro spuštění analýzy nastaví st.session_state na True
         if st.button("🚀 Run Spot Market Analysis", type="primary"):
+            st.session_state.analysis_run = True
+
+        # Pokud byla analýza spuštěna, vykreslujeme výsledky (zůstanou zachovány i při hýbání s posuvníky)
+        if st.session_state.analysis_run:
             with st.spinner("Downloading data, calculating MACD, and updating AI..."):
                 try:
                     sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
@@ -191,7 +189,6 @@ if app_mode == "📊 Market Scanning & Overview":
                     sp500_close = float(sp500['Close'].iloc[-1])
                     sp500_sma50 = float(sp500['Close'].rolling(window=50).mean().iloc[-1])
                     
-                    # Výpočet měsíčního zhodnocení S&P 500 pro Relativní sílu
                     if len(sp500) >= 30:
                         sp500_30d_return = (sp500_close - float(sp500['Close'].iloc[-30])) / float(sp500['Close'].iloc[-30]) * 100
                     else:
@@ -229,11 +226,9 @@ if app_mode == "📊 Market Scanning & Overview":
                     if filter_safe_earnings and earnings_days <= 7:
                         continue
 
-                    # Nové: Výpočet vzdálenosti od 52týdenního maxima
                     high_52w = float(data['High'].max())
                     dist_52w_pct = ((high_52w - skutecna_cena) / high_52w) * 100
 
-                    # Nové: Relativní síla vůči S&P 500 (za 30 dní)
                     asset_30d_return = (skutecna_cena - float(data['Close'].iloc[-30])) / float(data['Close'].iloc[-30]) * 100
                     rs_vs_sp500 = asset_30d_return - sp500_30d_return
 
@@ -256,13 +251,12 @@ if app_mode == "📊 Market Scanning & Overview":
                     is_bullish_trend = skutecna_cena > sma_200
                     potencial_procent = (rozdil_usd / skutecna_cena) * 100
 
-                    # Skórování uzpůsobeno na spotové nákupy
                     ai_score = 0
                     if skutecna_cena > sma_50: ai_score += 1
                     else: ai_score -= 1
                     
-                    if rs_vs_sp500 > 0: ai_score += 1 # Prémium za překonávání trhu
-                    if macd_hist > 0: ai_score += 1   # Pozitivní momentum
+                    if rs_vs_sp500 > 0: ai_score += 1
+                    if macd_hist > 0: ai_score += 1
 
                     if rsi_val < 35: ai_score += 1
                     elif rsi_val > 65: ai_score -= 1
@@ -323,22 +317,18 @@ if app_mode == "📊 Market Scanning & Overview":
                         except Exception:
                             pass
 
-                    # Karta akcie přizpůsobená pro spotové obchodování
                     with st.expander(f"Analysis for: {ticker} | Price: ${skutecna_cena:.2f} | RS vs S&P500: {rs_vs_sp500:.1f}%"):
                         col1, col2, col3 = st.columns(3)
                         
-                        # Sloupec 1: Základy
                         col1.markdown("**Technical Base**")
                         col1.metric("Current Price", f"${skutecna_cena:.2f}")
                         col1.metric("RSI (14)", f"{rsi_val:.1f}")
                         
-                        # Sloupec 2: Momentum
                         col2.markdown("**Momentum**")
                         macd_color = "🟢 Positive" if macd_hist > 0 else "🔴 Negative"
                         col2.metric("MACD Hist", f"{macd_hist:.2f}", delta=macd_color, delta_color="off")
                         col2.metric("Gain / 1 USD Invested", f"+{zisk_na_1_usd:.2f} USD")
                         
-                        # Sloupec 3: Relativní síla
                         col3.markdown("**Sector Strength**")
                         rs_color = "🟢 Outperforming" if rs_vs_sp500 > 0 else "🔴 Underperforming"
                         col3.metric("vs S&P 500 (30d)", f"{rs_vs_sp500:.2f}%", delta=rs_color, delta_color="off")
@@ -356,7 +346,6 @@ if app_mode == "📊 Market Scanning & Overview":
                         else:
                             st.info(advice_action)
 
-                        # Odstraněn Short, zvětšen prostor pro Long
                         st.markdown("#### 🟢 SPOT SWING SETUP (Buy & Hold)")
                         col_entry, col_sl, col_tp = st.columns(3)
                         col_entry.success(f"**Ideal Entry:**\n${long_entry:.2f}")
@@ -376,7 +365,6 @@ if app_mode == "📊 Market Scanning & Overview":
                         shares_to_buy = int(allowed_risk_usd / risk_per_share) if risk_per_share > 0 else 0
                         total_position_value = shares_to_buy * skutecna_cena
 
-                        # Varování, pokud pozice přesahuje dostupný kapitál
                         if total_position_value > user_capital:
                             shares_to_buy = int(user_capital / skutecna_cena)
                             total_position_value = shares_to_buy * skutecna_cena

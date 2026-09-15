@@ -71,9 +71,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filters & Strategies")
 
-# Toggle for minimum gain >= $0.08 per $1 invested (vráceno na 0.08)
 filter_high_gain = st.sidebar.toggle("💵 Gain / $1 >= $0.08", value=False, help="Displays only assets with a growth potential to the 20d peak of $0.08 or more per $1 invested.")
-
 filter_breakout = st.sidebar.toggle("🚀 Only Active Breakouts", value=False)
 filter_squeeze = st.sidebar.toggle("📦 Only Consolidations (BB Squeeze)", value=False)
 filter_volume = st.sidebar.toggle("📊 High Volume Confirmation Only", value=False)
@@ -274,9 +272,8 @@ if app_mode == "📊 Market Scanner & Patterns":
                 long_take_profit = actual_price + (2.5 * atr_val)
 
                 # Trend Strength & Percentage calculation
-                # Skóre od -100 do +100 podle RSI, RS vs S&P500 a MACD
-                rsi_score_component = (rsi_val - 50) / 50 * 30  # -30 až +30
-                rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40 # -40 až +40
+                rsi_score_component = (rsi_val - 50) / 50 * 30
+                rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
                 macd_score_component = 30 if macd_hist > 0 else -30
                 
                 raw_trend_score = rsi_score_component + rs_score_component + macd_score_component
@@ -335,21 +332,8 @@ if app_mode == "📊 Market Scanner & Patterns":
         
         if analyzed_count > 0 and valid_results:
             valid_results = sorted(valid_results, key=lambda x: x["score"], reverse=True)
-            top_pick = valid_results[0]
 
-            # --- TOP DOPORUČENÍ ---
-            st.markdown("---")
-            st.markdown("### 🌟 Klondike Top Recommended Asset")
-            st.info(
-                f"### 🎯 **Top Pick: {top_pick['ticker']}**\n\n"
-                f"- **Current Price:** `${top_pick['actual_price']:.2f}`\n"
-                f"- **Action Recommendation:** `{top_pick['action_rec']}`\n"
-                f"- **Trend Status:** `{top_pick['trend_text']}`\n"
-                f"- **RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%`\n\n"
-                f"💡 *Klondike Agent highlights this asset as the strongest candidate based on relative strength and confirmation metrics.*"
-            )
-            st.markdown("---")
-            st.markdown("### 📊 All Filtered Results")
+            st.markdown("### 📊 Filtered Scan Results")
 
             for res in valid_results:
                 ticker = res["ticker"]
@@ -384,10 +368,9 @@ if app_mode == "📊 Market Scanner & Patterns":
 
                 with st.expander(f"📌 {ticker} | Price: ${actual_price:.2f} | Action: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
                     
-                    # Zobrazení doporučení a trendu přímo v boxu
                     st.markdown(f"### 🎯 Action Recommendation: **{action_rec}**")
                     st.markdown(f"📈 **Trend Analysis:** {trend_text}")
-                    st.progress(int((trend_pct + 100) / 2)) # Grafický progress bar trendu (převod z -100..100 na 0..100)
+                    st.progress(int((trend_pct + 100) / 2))
                     
                     st.markdown("---")
 

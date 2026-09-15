@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- VISUAL CONFIGURATION & DESIGN (CSS) ---
+# --- VISUAL CONFIGURATION & MODERN GRAPHIC DESIGN (CSS) ---
 st.set_page_config(
     page_title="Klondike Spot Swing Scanner", 
     page_icon="📈", 
@@ -16,39 +16,69 @@ st.set_page_config(
 
 st.markdown("""
     <style>
+    /* Global Styles & Modern Font/Background */
     .main {
-        background-color: #ffffff;
-        color: #000000;
+        background-color: #f4f6f9;
+        color: #1e293b;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
+    
+    /* Header styling */
+    h1, h2, h3 {
+        letter-spacing: -0.5px;
+        color: #0f172a;
+    }
+    
+    /* Custom Card Containers */
     .stExpander {
-        border: 1px solid #e0e0e0 !important;
-        border-radius: 10px !important;
-        background-color: #f8f9fa !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        margin-bottom: 1rem;
     }
+    
+    /* Primary Buttons */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
-        transition: all 0.3s ease;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        transition: all 0.2s ease;
     }
     .stButton>button:hover {
-        border-color: #ff4b4b;
-        color: #ff4b4b;
+        background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+        box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+        color: white;
     }
-    h1, h2, h3 {
-        letter-spacing: -0.5px;
+    
+    /* Sidebar aesthetic */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    /* Metric styling adjustments */
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #0f172a;
     }
     </style>
 """, unsafe_allow_html=True)
 
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Active and Ready (Spot Only)"
-        self.protocols = ["Spot Trend Following", "Dynamic Volatility Guard", "Volume & Pattern Confirmation"]
+        self.status = "Active & Ready (Spot Only)"
+        self.protocols = ["Spot Trend Tracking", "Dynamic Volatility Protection", "Volume & Pattern Confirmation"]
 
-st.title("📈 AI Spot Swing Scanner & Pattern Analyzer")
-st.markdown("<p style='font-size: 1.1em; color: #555555;'>Professional market analytics with AI insights, volume spikes, breakout/breakdown detection, and S&P 500 relative strength.</p>", unsafe_allow_html=True)
+st.title("📈 AI Spot Swing Scanner & Pattern Analyst")
+st.markdown("<p style='font-size: 1.1em; color: #475569;'>Professional market analytics featuring AI insights, volume spike detection, technical breakouts, and S&P 500 relative strength.</p>", unsafe_allow_html=True)
 
-# Initialize Supabase Database
+# Supabase Initialization
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -57,11 +87,24 @@ except Exception as e:
     supabase = None
     st.sidebar.warning("⚠️ Database not connected")
 
-# Sidebar for custom tickers and pattern filters
+# Sidebar - Tickers & Filters
 st.sidebar.markdown("### 🔍 Asset Search")
-custom_ticker_input = st.sidebar.text_input("Add Ticker (e.g., AAPL, MSFT):", "").upper().strip()
+custom_ticker_input = st.sidebar.text_input("Add custom ticker (e.g. AAPL, MSFT):", "").upper().strip()
 
-DEFAULT_TICKERS = ["META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "ASML", "NVDA", "NFLX", "AMD", "INTC", "KO", "JPM", "XOM", "JNJ", "SPY", "V", "DIS", "BAC", "PLTR", "PFE", "NKE", "PYPL", "IBM", "UBER", "WMT"]
+DEFAULT_TICKERS = [
+    # Original core tickers
+    "META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "ASML", 
+    "NVDA", "NFLX", "AMD", "INTC", "KO", "JPM", "XOM", "JNJ", "SPY", "V", 
+    "DIS", "BAC", "PLTR", "PFE", "NKE", "PYPL", "IBM", "UBER", "WMT",
+    # Added Mega-Cap Giants (Design 1 & 2)
+    "AVGO",  # Broadcom
+    "LLY",   # Eli Lilly
+    "ORCL",  # Oracle
+    "COST",  # Costco
+    "MA",    # Mastercard
+    "HD",    # Home Depot
+    "CRM"    # Salesforce
+]
 
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
@@ -71,12 +114,12 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filters & Strategies")
 
-filter_high_gain = st.sidebar.toggle("💵 Gain / $1 >= $0.08", value=False, help="Displays only assets with a growth potential to the 20d peak of $0.08 or more per $1 invested.")
-filter_breakout = st.sidebar.toggle("🚀 Only Active Breakouts", value=False)
-filter_squeeze = st.sidebar.toggle("📦 Only Consolidations (BB Squeeze)", value=False)
-filter_volume = st.sidebar.toggle("📊 High Volume Confirmation Only", value=False)
-filter_outperforming = st.sidebar.toggle("⚡ Outperforming S&P 500 only", value=False)
-filter_safe_earnings = st.sidebar.toggle("🛡️ Hide stocks with earnings < 7 days", value=False)
+filter_high_gain = st.sidebar.toggle("💵 Gain / 1 $ >= 0.06 $", value=False, help="Displays assets with growth potential to 20-day peak of $0.06 or more per 1 $ invested.")
+filter_breakout = st.sidebar.toggle("🚀 Active Breakouts Only", value=False)
+filter_squeeze = st.sidebar.toggle("📦 Consolidations Only (BB Squeeze)", value=False)
+filter_volume = st.sidebar.toggle("📊 Confirmed Volume Only", value=False)
+filter_outperforming = st.sidebar.toggle("⚡ Outperforming S&P 500 Only", value=False)
+filter_safe_earnings = st.sidebar.toggle("🛡️ Hide Earnings < 7 Days", value=False)
 
 PRED_DAYS = 20
 
@@ -160,42 +203,47 @@ def analyze_news_sentiment(ticker_obj):
     try:
         news = getattr(ticker_obj, 'news', None)
         if not news:
-            return "➖ (No recent news)", "Headline not found"
+            return "➖ (No fresh news)", "Headline not found", []
         
-        bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss"]
+        bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss", "miss"]
         bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain", "buy"]
         
         score = 0
         latest_headline = "Unknown headline"
+        headlines = []
         
         for item in news[:5]:
             title = item.get('title', '') if isinstance(item, dict) else getattr(item, 'title', '')
-            if latest_headline == "Unknown headline" and title:
-                latest_headline = title
-            title_lower = title.lower()
-            for kw in bullish_keywords:
-                if kw in title_lower: score += 1
-            for kw in bearish_keywords:
-                if kw in title_lower: score -= 1
+            if title:
+                headlines.append(title)
+                if latest_headline == "Unknown headline":
+                    latest_headline = title
+                title_lower = title.lower()
+                for kw in bullish_keywords:
+                    if kw in title_lower: score += 1
+                for kw in bearish_keywords:
+                    if kw in title_lower: score -= 1
                 
-        if score > 0: return "📈 BULLISH", latest_headline
-        elif score < 0: return "📉 BEARISH", latest_headline
-        else: return "➖ NEUTRAL", latest_headline
+        if score > 0: sentiment_label = "📈 BULLISH"
+        elif score < 0: sentiment_label = "📉 BEARISH"
+        else: sentiment_label = "➖ NEUTRAL"
+        
+        return sentiment_label, latest_headline, headlines
     except Exception:
-        return "➖ (News unavailable)", "Error loading news"
+        return "➖ (News unavailable)", "Error loading news", []
 
-app_mode = st.radio("Select View Mode:", [
+app_mode = st.radio("Select View:", [
     "📊 Market Scanner & Patterns", 
     "🤖 Klondike Agent Hub",
-    "📘 User Manual"
+    "📘 User Guide"
 ], horizontal=True)
 
 if app_mode == "📊 Market Scanner & Patterns":
-    if st.button("🚀 Launch Scan & Pattern Analysis", type="primary", use_container_width=True):
+    if st.button("🚀 Run Scan & Pattern Analysis", type="primary", use_container_width=True):
         st.session_state.analysis_run = True
 
     if st.session_state.analysis_run:
-        with st.spinner("Processing S&P 500 benchmark, volume profiles, and patterns..."):
+        with st.spinner("Processing S&P 500 benchmark, volume profiles, and chart patterns..."):
             try:
                 sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                 if isinstance(sp500.columns, pd.MultiIndex):
@@ -231,7 +279,7 @@ if app_mode == "📊 Market Scanner & Patterns":
                 asset_30d_return = (actual_price - float(data['Close'].iloc[-30])) / float(data['Close'].iloc[-30]) * 100
                 rs_vs_sp500 = asset_30d_return - sp500_30d_return
 
-                if filter_high_gain and gain_per_1_usd < 0.08:
+                if filter_high_gain and gain_per_1_usd < 0.06:
                     continue
 
                 is_breakout, is_breakdown, is_squeeze = detect_patterns(data)
@@ -252,26 +300,26 @@ if app_mode == "📊 Market Scanner & Patterns":
 
                 analyzed_count += 1
                 
-                news_sentiment, latest_headline = analyze_news_sentiment(t_obj)
+                news_sentiment, latest_headline, headlines_list = analyze_news_sentiment(t_obj)
                 rsi_val = calculate_rsi(data)
                 atr_val = calculate_atr(data)
                 macd_line, macd_signal, macd_hist = calculate_macd(data)
                 
                 pattern_label = "⚖️ Standard Movement"
                 if is_breakout and is_vol_spike:
-                    pattern_label = "🚀 High-Volume Breakout (Strong Bullish)"
+                    pattern_label = "🚀 Strong Volume Breakout (Strongly Bullish)"
                 elif is_breakout:
                     pattern_label = "↗️ Price Breakout"
                 elif is_squeeze:
                     pattern_label = "📦 Consolidation (BB Squeeze)"
                 elif is_breakdown:
-                    pattern_label = "📉 Breakdown Warning"
+                    pattern_label = "📉 Breakdown Warning / Selloff"
 
                 long_entry = actual_price
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
-                # Trend Strength & Percentage calculation
+                # Trend score & percentage calculation
                 rsi_score_component = (rsi_val - 50) / 50 * 30
                 rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
                 macd_score_component = 30 if macd_hist > 0 else -30
@@ -284,21 +332,21 @@ if app_mode == "📊 Market Scanner & Patterns":
                 elif trend_pct > 0:
                     trend_text = f"Mild Bullish Trend (+{trend_pct:.1f}%)"
                 elif trend_pct <= -40:
-                    trend_text = f"Strong Bearish Trend ({trend_pct:.1f}%)"
+                    trend_text = f"Strong Bearish Trend / Selloff ({trend_pct:.1f}%)"
                 else:
                     trend_text = f"Mild Bearish Trend ({trend_pct:.1f}%)"
 
-                # Action Recommendation logic
+                # Action recommendation logic
                 if is_breakout and is_vol_spike and rsi_val < 70 and rs_vs_sp500 > 0:
-                    action_rec = "🚀 STRONG BUY (Immediate breakout confirmation)"
+                    action_rec = "🚀 STRONG BUY (Immediate Breakout Confirmation)"
                 elif is_squeeze and rs_vs_sp500 >= 0:
                     action_rec = "📦 ACCUMULATE / DCA (Consolidation before expansion)"
                 elif rs_vs_sp500 > 0 and rsi_val <= 65:
-                    action_rec = "🛒 BUY ON DIPS (Outperforming relative strength)"
+                    action_rec = "🛒 BUY THE DIP (Outperforming Relative Strength)"
                 elif rsi_val > 75 or is_breakdown:
-                    action_rec = "⚠️ REDUCE / SELL (Overbought or breakdown risk)"
+                    action_rec = "⚠️ REDUCE / SELL (Overbought or Breakdown Risk)"
                 else:
-                    action_rec = "⏳ WAIT / WATCH (Neutral setup, wait for clarity)"
+                    action_rec = "⏳ WAIT / WATCH (Neutral setup, stand by)"
 
                 score = rs_vs_sp500 + (vol_ratio * 10) if is_vol_spike else rs_vs_sp500
 
@@ -319,6 +367,7 @@ if app_mode == "📊 Market Scanner & Patterns":
                     "atr_val": atr_val,
                     "news_sentiment": news_sentiment,
                     "latest_headline": latest_headline,
+                    "headlines_list": headlines_list,
                     "earnings_days": earnings_days,
                     "earnings_date_str": earnings_date_str,
                     "trend_pct": trend_pct,
@@ -350,6 +399,7 @@ if app_mode == "📊 Market Scanner & Patterns":
                 atr_val = res["atr_val"]
                 news_sentiment = res["news_sentiment"]
                 latest_headline = res["latest_headline"]
+                headlines_list = res["headlines_list"]
                 earnings_days = res["earnings_days"]
                 earnings_date_str = res["earnings_date_str"]
                 trend_pct = res["trend_pct"]
@@ -368,7 +418,7 @@ if app_mode == "📊 Market Scanner & Patterns":
 
                 with st.expander(f"📌 {ticker} | Price: ${actual_price:.2f} | Action: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
                     
-                    st.markdown(f"### 🎯 Action Recommendation: **{action_rec}**")
+                    st.markdown(f"### 🎯 Recommended Action: **{action_rec}**")
                     st.markdown(f"📈 **Trend Analysis:** {trend_text}")
                     st.progress(int((trend_pct + 100) / 2))
                     
@@ -383,7 +433,7 @@ if app_mode == "📊 Market Scanner & Patterns":
                     col2.markdown("**Volume & Potential**")
                     vol_status_text = "🔥 Volume Spike" if is_vol_spike else "⚖️ Normal Volume"
                     col2.metric("Volume Ratio", f"{vol_ratio:.2f}x avg", delta=vol_status_text, delta_color="off")
-                    col2.metric("Gain / $1 Invested", f"+${gain_per_1_usd:.2f}")
+                    col2.metric("Gain / 1 $ Invested", f"+${gain_per_1_usd:.2f}")
                     
                     col3.markdown("**Benchmark & Patterns**")
                     rs_color = "🟢 Outperforming" if rs_vs_sp500 > 0 else "🔴 Underperforming"
@@ -392,15 +442,24 @@ if app_mode == "📊 Market Scanner & Patterns":
 
                     st.markdown("---")
                     
-                    if st.button(f"🤖 Ask AI Assessment: Interpret {ticker}", key=f"ai_summary_btn_{ticker}"):
-                        with st.spinner("AI is analyzing technicals and relative strength..."):
-                            st.markdown("### 🧠 AI Market Assessment:")
+                    if st.button(f"🤖 AI Analyst: Evaluate Tech & News for {ticker}", key=f"ai_summary_btn_{ticker}"):
+                        with st.spinner("AI linking technical indicators with media sentiment..."):
+                            st.markdown("### 🧠 AI Market & Context Evaluation:")
+                            
+                            news_explanation = ""
+                            if headlines_list:
+                                news_explanation = f"Current media feedback (e.g. *\"{latest_headline}\"*) indicates the market is reacting to headlines with a **{news_sentiment.lower()}** undertone. "
+                            else:
+                                news_explanation = "No major fresh headlines were detected in primary news outlets, meaning price action is driven primarily by institutional order flow and technical buying/selling. "
+
+                            vol_explanation = f"Volume activity stands at **{vol_ratio:.2f}x** the regular average ({'confirming aggressive institutional interest or panic' if is_vol_spike else 'under standard liquidity conditions'})."
+
                             st.write(
-                                f"Asset **{ticker}** exhibits a relative performance of **{rs_vs_sp500:+.2f}%** compared to the S&P 500 over the last 30 days, "
-                                f"{'indicating strong institutional accumulation' if rs_vs_sp500 > 0 else 'showing relative weakness against the broader market'}. "
-                                f"The RSI stands at **{rsi_val:.1f}**, while volume tracking reports a ratio of **{vol_ratio:.2f}x** of the 20-day average. "
-                                f"Pattern analysis identifies: **{pattern_label}**. Trend status: **{trend_text}**. "
-                                f"💡 **AI Action Guidance:** **{action_rec}**."
+                                f"Asset **{ticker}** demonstrates a relative performance of **{rs_vs_sp500:+.2f}%** against the S&P 500 over the past 30 days. "
+                                f"Technical condition with RSI at **{rsi_val:.1f}** and pattern **{pattern_label}** signals: {trend_text}. \n\n"
+                                f"📰 **Why the stock is moving (AI News Explanation):**\n"
+                                f"{news_explanation} {vol_explanation}\n\n"
+                                f"💡 **Recommended Next Step:** **{action_rec}**."
                             )
 
                     st.markdown("---")
@@ -411,12 +470,12 @@ if app_mode == "📊 Market Scanner & Patterns":
                     col_tp.info(f"**Take Profit:**\n${long_take_profit:.2f}")
 
                     st.markdown("---")
-                    st.markdown("#### 💰 Position Sizing Calculator (Unleveraged)")
+                    st.markdown("#### 💰 Position Sizing Calculator (No Leverage)")
                     col_cap1, col_cap2 = st.columns(2)
                     with col_cap1:
-                        user_capital = st.number_input(f"Total cash ($) for {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
+                        user_capital = st.number_input(f"Total Capital ($) for {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
                     with col_cap2:
-                        risk_pct = st.slider(f"Risk per trade (% of capital):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
+                        risk_pct = st.slider(f"Risk per Trade (% of Capital):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
 
                     allowed_risk_usd = user_capital * (risk_pct / 100.0)
                     risk_per_share = 1.5 * atr_val
@@ -426,12 +485,18 @@ if app_mode == "📊 Market Scanner & Patterns":
                     if total_position_value > user_capital:
                         shares_to_buy = int(user_capital / actual_price)
                         total_position_value = shares_to_buy * actual_price
-                        st.warning("⚠️ Initial calculation exceeded available cash. Adjusted to maximum possible quantity.")
+                        st.warning("⚠️ Initial calculation exceeded available cash. Adjusted to maximum possible share count.")
 
                     st.info(f"👉 **Execution:** Buy **{shares_to_buy} shares** | **Total Value:** `${total_position_value:.2f}` | **Max Risk:** `${allowed_risk_usd:.2f}`")
 
                     st.markdown("---")
-                    st.write(f"**News Sentiment:** {news_sentiment} | *\"{latest_headline}\"*")
+                    st.markdown("#### 📰 Recent News Feed")
+                    st.write(f"**Sentiment:** {news_sentiment}")
+                    if headlines_list:
+                        for h in headlines_list[:3]:
+                            st.markdown(f"- *{h}*")
+                    else:
+                        st.write("No news available to display.")
                     
                     if earnings_days != 999 and earnings_days <= 7:
                         st.error(f"⚠️ **EARNINGS IN {earnings_days} DAYS:** ({earnings_date_str}). High gap risk!")
@@ -442,18 +507,19 @@ if app_mode == "📊 Market Scanner & Patterns":
                     st.pyplot(fig)
 
         if analyzed_count == 0 or not valid_results:
-            st.warning("⚠️ No assets match your current pattern and filter criteria.")
+            st.warning("⚠️ No assets match your current pattern definitions and filter criteria.")
 
 elif app_mode == "🤖 Klondike Agent Hub":
     st.subheader("🤖 Klondike Spot Agent Hub")
-    st.markdown("Monitoring automated volume anomaly trackers and consolidation breakout protocols.")
+    st.markdown("Monitoring automated volume anomaly detectors and consolidation breakout protocols.")
     agent = KlondikeExecutionAgent()
     st.success(f"**Agent Status:** {agent.status}")
     for proto in agent.protocols:
         st.markdown(f"- ✅ `{proto}`")
 
-elif app_mode == "📘 User Manual":
-    st.subheader("📘 User Manual & Strategy Guide")
-    st.markdown("1. **Gain / $1 Invested:** Shows the calculated headroom toward recent highs per single dollar invested.")
-    st.markdown("2. **S&P 500 Outperformance:** Filters assets showing positive relative strength against the major benchmark index.")
-    st.markdown("3. **Volume Spikes & Squeezes:** Combines high volume confirmation with Bollinger Squeezes for explosive swing setups.")
+elif app_mode == "📘 User Guide":
+    st.subheader("📘 User Guide & Strategy Manual")
+    st.markdown("1. **Gain / 1 $ Invested:** Calculates room toward recent highs for every 1 dollar of deployed capital.")
+    st.markdown("2. **S&P 500 Outperformance:** Filters stocks demonstrating positive relative strength against the primary market benchmark.")
+    st.markdown("3. **Volume Spikes & Squeezes:** Combines high volume confirmation with Bollinger Bands (Squeeze) for explosive swing trades.")
+    st.markdown("4. **AI News Evaluation:** Links technical patterns and volumes with current media headlines to explain *why* the stock is behaving a certain way.")

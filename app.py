@@ -71,7 +71,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filters & Strategies")
 
-# Toggle for minimum gain >= $0.08 per $1 invested
+# Toggle for minimum gain >= $0.08 per $1 invested (vráceno na 0.08)
 filter_high_gain = st.sidebar.toggle("💵 Gain / $1 >= $0.08", value=False, help="Displays only assets with a growth potential to the 20d peak of $0.08 or more per $1 invested.")
 
 filter_breakout = st.sidebar.toggle("🚀 Only Active Breakouts", value=False)
@@ -273,7 +273,36 @@ if app_mode == "📊 Market Scanner & Patterns":
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
-                # Scoring for Top Recommendation
+                # Trend Strength & Percentage calculation
+                # Skóre od -100 do +100 podle RSI, RS vs S&P500 a MACD
+                rsi_score_component = (rsi_val - 50) / 50 * 30  # -30 až +30
+                rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40 # -40 až +40
+                macd_score_component = 30 if macd_hist > 0 else -30
+                
+                raw_trend_score = rsi_score_component + rs_score_component + macd_score_component
+                trend_pct = float(np.clip(raw_trend_score, -100, 100))
+
+                if trend_pct >= 40:
+                    trend_text = f"Strong Bullish Trend (+{trend_pct:.1f}%)"
+                elif trend_pct > 0:
+                    trend_text = f"Mild Bullish Trend (+{trend_pct:.1f}%)"
+                elif trend_pct <= -40:
+                    trend_text = f"Strong Bearish Trend ({trend_pct:.1f}%)"
+                else:
+                    trend_text = f"Mild Bearish Trend ({trend_pct:.1f}%)"
+
+                # Action Recommendation logic
+                if is_breakout and is_vol_spike and rsi_val < 70 and rs_vs_sp500 > 0:
+                    action_rec = "🚀 STRONG BUY (Immediate breakout confirmation)"
+                elif is_squeeze and rs_vs_sp500 >= 0:
+                    action_rec = "📦 ACCUMULATE / DCA (Consolidation before expansion)"
+                elif rs_vs_sp500 > 0 and rsi_val <= 65:
+                    action_rec = "🛒 BUY ON DIPS (Outperforming relative strength)"
+                elif rsi_val > 75 or is_breakdown:
+                    action_rec = "⚠️ REDUCE / SELL (Overbought or breakdown risk)"
+                else:
+                    action_rec = "⏳ WAIT / WATCH (Neutral setup, wait for clarity)"
+
                 score = rs_vs_sp500 + (vol_ratio * 10) if is_vol_spike else rs_vs_sp500
 
                 valid_results.append({
@@ -295,6 +324,9 @@ if app_mode == "📊 Market Scanner & Patterns":
                     "latest_headline": latest_headline,
                     "earnings_days": earnings_days,
                     "earnings_date_str": earnings_date_str,
+                    "trend_pct": trend_pct,
+                    "trend_text": trend_text,
+                    "action_rec": action_rec,
                     "score": score
                 })
 
@@ -302,19 +334,18 @@ if app_mode == "📊 Market Scanner & Patterns":
                 st.error(f"Error processing {ticker}: {e}")
         
         if analyzed_count > 0 and valid_results:
-            # Sort by score to find the top recommendation
             valid_results = sorted(valid_results, key=lambda x: x["score"], reverse=True)
             top_pick = valid_results[0]
 
-            # --- VÝRAZNÉ ZOBRAZENÍ TOP DOPORUČENÍ ---
+            # --- TOP DOPORUČENÍ ---
             st.markdown("---")
             st.markdown("### 🌟 Klondike Top Recommended Asset")
             st.info(
                 f"### 🎯 **Top Pick: {top_pick['ticker']}**\n\n"
                 f"- **Current Price:** `${top_pick['actual_price']:.2f}`\n"
-                f"- **RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%`\n"
-                f"- **Pattern:** `{top_pick['pattern_label']}`\n"
-                f"- **Volume Ratio:** `{top_pick['vol_ratio']:.2f}x`\n\n"
+                f"- **Action Recommendation:** `{top_pick['action_rec']}`\n"
+                f"- **Trend Status:** `{top_pick['trend_text']}`\n"
+                f"- **RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%`\n\n"
                 f"💡 *Klondike Agent highlights this asset as the strongest candidate based on relative strength and confirmation metrics.*"
             )
             st.markdown("---")
@@ -337,6 +368,9 @@ if app_mode == "📊 Market Scanner & Patterns":
                 latest_headline = res["latest_headline"]
                 earnings_days = res["earnings_days"]
                 earnings_date_str = res["earnings_date_str"]
+                trend_pct = res["trend_pct"]
+                trend_text = res["trend_text"]
+                action_rec = res["action_rec"]
                 data = res["data"]
 
                 df = data.reset_index()[['Date', 'Close']]
@@ -348,7 +382,15 @@ if app_mode == "📊 Market Scanner & Patterns":
                 future = model.make_future_dataframe(periods=PRED_DAYS)
                 forecast = model.predict(future)
 
-                with st.expander(f"📌 {ticker} | Price: ${actual_price:.2f} | Gain/$1: +${gain_per_1_usd:.2f} | RS vs S&P 500: {rs_vs_sp500:+.1f}%"):
+                with st.expander(f"📌 {ticker} | Price: ${actual_price:.2f} | Action: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
+                    
+                    # Zobrazení doporučení a trendu přímo v boxu
+                    st.markdown(f"### 🎯 Action Recommendation: **{action_rec}**")
+                    st.markdown(f"📈 **Trend Analysis:** {trend_text}")
+                    st.progress(int((trend_pct + 100) / 2)) # Grafický progress bar trendu (převod z -100..100 na 0..100)
+                    
+                    st.markdown("---")
+
                     col1, col2, col3 = st.columns(3)
                     
                     col1.markdown("**Price & Momentum**")
@@ -374,8 +416,8 @@ if app_mode == "📊 Market Scanner & Patterns":
                                 f"Asset **{ticker}** exhibits a relative performance of **{rs_vs_sp500:+.2f}%** compared to the S&P 500 over the last 30 days, "
                                 f"{'indicating strong institutional accumulation' if rs_vs_sp500 > 0 else 'showing relative weakness against the broader market'}. "
                                 f"The RSI stands at **{rsi_val:.1f}**, while volume tracking reports a ratio of **{vol_ratio:.2f}x** of the 20-day average. "
-                                f"Pattern analysis identifies: **{pattern_label}**. "
-                                f"💡 **AI Recommendation:** Ensure strict adherence to your risk management and target parameters."
+                                f"Pattern analysis identifies: **{pattern_label}**. Trend status: **{trend_text}**. "
+                                f"💡 **AI Action Guidance:** **{action_rec}**."
                             )
 
                     st.markdown("---")

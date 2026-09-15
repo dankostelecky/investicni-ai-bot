@@ -71,7 +71,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filters & Strategies")
 
-# Toggle for minimum gain >= $0.08 per $1 invested (vráceno na původních 0.08)
+# Toggle for minimum gain >= $0.08 per $1 invested
 filter_high_gain = st.sidebar.toggle("💵 Gain / $1 >= $0.08", value=False, help="Displays only assets with a growth potential to the 20d peak of $0.08 or more per $1 invested.")
 
 filter_breakout = st.sidebar.toggle("🚀 Only Active Breakouts", value=False)
@@ -211,7 +211,9 @@ if app_mode == "📊 Market Scanner & Patterns":
             except:
                 sp500_30d_return = 0
 
+        valid_results = []
         analyzed_count = 0
+        
         for ticker in active_tickers:
             try:
                 t_obj = yf.Ticker(ticker)
@@ -224,7 +226,6 @@ if app_mode == "📊 Market Scanner & Patterns":
 
                 actual_price = float(data['Close'].iloc[-1])
                 
-                # Gain per $1 calculation from 20d peak
                 peak_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
                 diff_usd = peak_20d - actual_price
                 gain_per_1_usd = diff_usd / actual_price if actual_price > 0 else 0
@@ -232,15 +233,12 @@ if app_mode == "📊 Market Scanner & Patterns":
                 asset_30d_return = (actual_price - float(data['Close'].iloc[-30])) / float(data['Close'].iloc[-30]) * 100
                 rs_vs_sp500 = asset_30d_return - sp500_30d_return
 
-                # Filter by high gain toggle (vráceno na 0.08)
                 if filter_high_gain and gain_per_1_usd < 0.08:
                     continue
 
-                # Run Pattern & Volume Analysis
                 is_breakout, is_breakdown, is_squeeze = detect_patterns(data)
                 current_vol, avg_vol, is_vol_spike, vol_ratio = analyze_volume(data)
                 
-                # Apply Sidebar Filters
                 if filter_breakout and not is_breakout:
                     continue
                 if filter_squeeze and not is_squeeze:
@@ -274,6 +272,70 @@ if app_mode == "📊 Market Scanner & Patterns":
                 long_entry = actual_price
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
+
+                # Scoring for Top Recommendation
+                score = rs_vs_sp500 + (vol_ratio * 10) if is_vol_spike else rs_vs_sp500
+
+                valid_results.append({
+                    "ticker": ticker,
+                    "t_obj": t_obj,
+                    "data": data,
+                    "actual_price": actual_price,
+                    "gain_per_1_usd": gain_per_1_usd,
+                    "rs_vs_sp500": rs_vs_sp500,
+                    "rsi_val": rsi_val,
+                    "vol_ratio": vol_ratio,
+                    "is_vol_spike": is_vol_spike,
+                    "pattern_label": pattern_label,
+                    "long_entry": long_entry,
+                    "long_stop_loss": long_stop_loss,
+                    "long_take_profit": long_take_profit,
+                    "atr_val": atr_val,
+                    "news_sentiment": news_sentiment,
+                    "latest_headline": latest_headline,
+                    "earnings_days": earnings_days,
+                    "earnings_date_str": earnings_date_str,
+                    "score": score
+                })
+
+            except Exception as e:
+                st.error(f"Error processing {ticker}: {e}")
+        
+        if analyzed_count > 0 and valid_results:
+            # Sort by score to find the top recommendation
+            valid_results = sorted(valid_results, key=lambda x: x["score"], reverse=True)
+            top_pick = valid_results[0]
+
+            st.markdown("---")
+            st.markdown("### 🌟 Klondike Top Recommended Asset")
+            st.success(
+                f"**Top Pick:** **{top_pick['ticker']}** | "
+                f"**Price:** `${top_pick['actual_price']:.2f}` | "
+                f"**RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%` | "
+                f"**Pattern:** `{top_pick['pattern_label']}`\n\n"
+                f"💡 *Klondike Agent highlights this asset due to strong relative performance and confirmation metrics.*"
+            )
+            st.markdown("---")
+            st.markdown("### 📊 All Filtered Results")
+
+            for res in valid_results:
+                ticker = res["ticker"]
+                actual_price = res["actual_price"]
+                gain_per_1_usd = res["gain_per_1_usd"]
+                rs_vs_sp500 = res["rs_vs_sp500"]
+                rsi_val = res["rsi_val"]
+                vol_ratio = res["vol_ratio"]
+                is_vol_spike = res["is_vol_spike"]
+                pattern_label = res["pattern_label"]
+                long_entry = res["long_entry"]
+                long_stop_loss = res["long_stop_loss"]
+                long_take_profit = res["long_take_profit"]
+                atr_val = res["atr_val"]
+                news_sentiment = res["news_sentiment"]
+                latest_headline = res["latest_headline"]
+                earnings_days = res["earnings_days"]
+                earnings_date_str = res["earnings_date_str"]
+                data = res["data"]
 
                 df = data.reset_index()[['Date', 'Close']]
                 df.columns = ['ds', 'y']
@@ -352,10 +414,7 @@ if app_mode == "📊 Market Scanner & Patterns":
                     ax.set_title(f"20-Day Price Forecast: {ticker}")
                     st.pyplot(fig)
 
-            except Exception as e:
-                st.error(f"Error processing {ticker}: {e}")
-        
-        if analyzed_count == 0:
+        if analyzed_count == 0 or not valid_results:
             st.warning("⚠️ No assets match your current pattern and filter criteria.")
 
 elif app_mode == "🤖 Klondike Agent Hub":

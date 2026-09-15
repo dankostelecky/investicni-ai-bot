@@ -306,14 +306,16 @@ if app_mode == "📊 Market Scanner & Patterns":
             valid_results = sorted(valid_results, key=lambda x: x["score"], reverse=True)
             top_pick = valid_results[0]
 
+            # --- VÝRAZNÉ ZOBRAZENÍ TOP DOPORUČENÍ ---
             st.markdown("---")
             st.markdown("### 🌟 Klondike Top Recommended Asset")
-            st.success(
-                f"**Top Pick:** **{top_pick['ticker']}** | "
-                f"**Price:** `${top_pick['actual_price']:.2f}` | "
-                f"**RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%` | "
-                f"**Pattern:** `{top_pick['pattern_label']}`\n\n"
-                f"💡 *Klondike Agent highlights this asset due to strong relative performance and confirmation metrics.*"
+            st.info(
+                f"### 🎯 **Top Pick: {top_pick['ticker']}**\n\n"
+                f"- **Current Price:** `${top_pick['actual_price']:.2f}`\n"
+                f"- **RS vs S&P 500:** `{top_pick['rs_vs_sp500']:+.2f}%`\n"
+                f"- **Pattern:** `{top_pick['pattern_label']}`\n"
+                f"- **Volume Ratio:** `{top_pick['vol_ratio']:.2f}x`\n\n"
+                f"💡 *Klondike Agent highlights this asset as the strongest candidate based on relative strength and confirmation metrics.*"
             )
             st.markdown("---")
             st.markdown("### 📊 All Filtered Results")

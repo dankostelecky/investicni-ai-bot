@@ -7,119 +7,121 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- VISUAL CONFIGURATION & MODERN GRAPHIC DESIGN (CSS) ---
+# --- VIZUÁLNÍ KONFIGURACE A DESIGN (CSS) ---
 st.set_page_config(
-    page_title="Klondike Spot Swing Scanner", 
+    page_title="Klondike Spot Swing Skener", 
     page_icon="📈", 
     layout="wide"
 )
 
 st.markdown("""
     <style>
-    /* Global Styles & Modern Font/Background */
     .main {
-        background-color: #f4f6f9;
-        color: #1e293b;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background-color: #ffffff;
+        color: #000000;
     }
-    
-    /* Header styling */
-    h1, h2, h3 {
-        letter-spacing: -0.5px;
-        color: #0f172a;
-    }
-    
-    /* Custom Card Containers */
     .stExpander {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        background-color: #ffffff !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-        margin-bottom: 1rem;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 10px !important;
+        background-color: #f8f9fa !important;
     }
-    
-    /* Primary Buttons */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white;
-        border: none;
-        padding: 0.5rem 1rem;
-        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
-        transition: all 0.2s ease;
+        transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
-        box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
-        color: white;
+        border-color: #ff4b4b;
+        color: #ff4b4b;
     }
-    
-    /* Sidebar aesthetic */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
-    }
-    
-    /* Metric styling adjustments */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #0f172a;
+    h1, h2, h3 {
+        letter-spacing: -0.5px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Active & Ready (Spot Only)"
-        self.protocols = ["Spot Trend Tracking", "Dynamic Volatility Protection", "Volume & Pattern Confirmation"]
+        self.status = "Aktivní a připraveno (pouze Spot)"
+        self.protocols = ["Sledování spotového trendu", "Dynamická ochrana volatility", "Potvrzení objemu a vzorců"]
 
-st.title("📈 AI Spot Swing Scanner & Pattern Analyst")
-st.markdown("<p style='font-size: 1.1em; color: #475569;'>Professional market analytics featuring AI insights, volume spike detection, technical breakouts, and S&P 500 relative strength.</p>", unsafe_allow_html=True)
+st.title("📈 AI Spot Swing Skener & Analytik Vzorců")
+st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, detekcí objemových špiček, průrazů a relativní síly vůči S&P 500.</p>", unsafe_allow_html=True)
 
-# Supabase Initialization
+# Inicializace Supabase databáze
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     supabase = None
-    st.sidebar.warning("⚠️ Database not connected")
+    st.sidebar.warning("⚠️ Databáze nepřipojena")
 
-# Sidebar - Tickers & Filters
-st.sidebar.markdown("### 🔍 Asset Search")
-custom_ticker_input = st.sidebar.text_input("Add custom ticker (e.g. AAPL, MSFT):", "").upper().strip()
+# Postranní panel pro vlastní tickery a filtry
+st.sidebar.markdown("### 🔍 Vyhledávání aktiv")
+custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):", "").upper().strip()
 
 DEFAULT_TICKERS = [
-    # Original core tickers
-    "META", "MSFT", "GOOGL", "TSM", "TSLA", "AAPL", "AMZN", "BRK-B", "ASML", 
-    "NVDA", "NFLX", "AMD", "INTC", "KO", "JPM", "XOM", "JNJ", "SPY", "V", 
-    "DIS", "BAC", "PLTR", "PFE", "NKE", "PYPL", "IBM", "UBER", "WMT",
-    # Added Mega-Cap Giants (Design 1 & 2)
-    "AVGO",  # Broadcom
-    "LLY",   # Eli Lilly
-    "ORCL",  # Oracle
-    "COST",  # Costco
-    "MA",    # Mastercard
-    "HD",    # Home Depot
-    "CRM"    # Salesforce
+    # --- Mega-Cap Core (Trillion-Dollar Club & Top Leaders) ---
+    "NVDA",  # NVIDIA (AI & Semiconductors)
+    "AAPL",  # Apple (Consumer Electronics)
+    "GOOGL", # Alphabet / Google (Tech & Search)
+    "MSFT",  # Microsoft (Cloud & Software)
+    "AMZN",  # Amazon (E-commerce & Cloud)
+    "META",  # Meta Platforms (Social Media & AI)
+    "AVGO",  # Broadcom (Semiconductors & Infrastructure)
+    "TSM",   # Taiwan Semiconductor (Chip Foundry)
+    "TSLA",  # Tesla (EV & Clean Energy)
+    "BRK-B", # Berkshire Hathaway (Conglomerate)
+    "WMT",   # Walmart (Retail Giant)
+    "LLY",   # Eli Lilly (Healthcare & Pharmaceuticals)
+    
+    # --- High-Cap Market Leaders & Stability ---
+    "MU",    # Micron Technology (Memory Chips & AI)
+    "JPM",   # JPMorgan Chase (Banking)
+    "ORCL",  # Oracle (Enterprise Cloud & Database)
+    "XOM",   # Exxon Mobil (Energy / Oil)
+    "V",     # Visa (Payments)
+    "MA",    # Mastercard (Payments)
+    "AMD",   # Advanced Micro Devices (Semiconductors)
+    "ASML",  # ASML Holding (Chip Manufacturing Equipment)
+    "NFLX",  # Netflix (Streaming Entertainment)
+    "JNJ",   # Johnson & Johnson (Healthcare)
+    "COST",  # Costco Wholesale (Retail)
+    "HD",    # Home Depot (Home Improvement Retail)
+    "CRM",   # Salesforce (Cloud CRM Software)
+    "UNH",   # UnitedHealth Group (Healthcare Services)
+    "PG",    # Procter & Gamble (Consumer Goods)
+    "ABBV",  # AbbVie (Biopharmaceuticals)
+    "BAC",   # Bank of America (Banking)
+    "IBM",   # International Business Machines (Tech)
+    "DIS",   # Walt Disney (Media & Entertainment)
+    "INTC",  # Intel (Semiconductors)
+    "KO",    # Coca-Cola (Consumer Defensive)
+    "PLTR",  # Palantir Technologies (AI & Data Analytics)
+    "UBER",  # Uber Technologies (Mobility & Logistics)
+    "PYPL",  # PayPal Holdings (Fintech)
+    "PFE",   # Pfizer (Pharmaceuticals)
+    "NKE",   # Nike (Apparel & Footwear)
+    
+    # --- Benchmark ---
+    "SPY"    # S&P 500 ETF (Market Benchmark)
 ]
 
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
     active_tickers.insert(0, custom_ticker_input)
-    st.sidebar.success(f"Added: {custom_ticker_input} to scanner!")
+    st.sidebar.success(f"Přidáno: {custom_ticker_input} do skeneru!")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🎛️ Filters & Strategies")
+st.sidebar.markdown("### 🎛️ Filtry a strategie")
 
-filter_high_gain = st.sidebar.toggle("💵 Gain / 1 $ >= 0.06 $", value=False, help="Displays assets with growth potential to 20-day peak of $0.06 or more per 1 $ invested.")
-filter_breakout = st.sidebar.toggle("🚀 Active Breakouts Only", value=False)
-filter_squeeze = st.sidebar.toggle("📦 Consolidations Only (BB Squeeze)", value=False)
-filter_volume = st.sidebar.toggle("📊 Confirmed Volume Only", value=False)
-filter_outperforming = st.sidebar.toggle("⚡ Outperforming S&P 500 Only", value=False)
-filter_safe_earnings = st.sidebar.toggle("🛡️ Hide Earnings < 7 Days", value=False)
+filter_high_gain = st.sidebar.toggle("💵 Zisk / 1 $ >= 0.06 $", value=False, help="Zobrazí pouze aktiva s růstovým potenciálem k 20dennímu vrcholu 0.06 $ nebo více na 1 $ investice.")
+filter_breakout = st.sidebar.toggle("🚀 Pouze aktivní průrazy", value=False)
+filter_squeeze = st.sidebar.toggle("📦 Pouze konsolidace (BB Squeeze)", value=False)
+filter_volume = st.sidebar.toggle("📊 Pouze s potvrzeným objemem", value=False)
+filter_outperforming = st.sidebar.toggle("⚡ Pouze překonávající S&P 500", value=False)
+filter_safe_earnings = st.sidebar.toggle("🛡️ Skrýt akcie s výsledky < 7 dnů", value=False)
 
 PRED_DAYS = 20
 
@@ -203,20 +205,20 @@ def analyze_news_sentiment(ticker_obj):
     try:
         news = getattr(ticker_obj, 'news', None)
         if not news:
-            return "➖ (No fresh news)", "Headline not found", []
+            return "➖ (Žádné čerstvé zprávy)", "Nadpis nenalezen", []
         
         bearish_keywords = ["sue", "lawsuit", "fine", "penalty", "drop", "plunge", "decline", "crash", "loss", "miss"]
         bullish_keywords = ["surge", "jump", "rally", "growth", "record", "profit", "beat", "strong", "gain", "buy"]
         
         score = 0
-        latest_headline = "Unknown headline"
+        latest_headline = "Neznámý nadpis"
         headlines = []
         
         for item in news[:5]:
             title = item.get('title', '') if isinstance(item, dict) else getattr(item, 'title', '')
             if title:
                 headlines.append(title)
-                if latest_headline == "Unknown headline":
+                if latest_headline == "Neznámý nadpis":
                     latest_headline = title
                 title_lower = title.lower()
                 for kw in bullish_keywords:
@@ -224,26 +226,26 @@ def analyze_news_sentiment(ticker_obj):
                 for kw in bearish_keywords:
                     if kw in title_lower: score -= 1
                 
-        if score > 0: sentiment_label = "📈 BULLISH"
-        elif score < 0: sentiment_label = "📉 BEARISH"
-        else: sentiment_label = "➖ NEUTRAL"
+        if score > 0: sentiment_label = "📈 BÝČÍ"
+        elif score < 0: sentiment_label = "📉 MEDVĚDÍ"
+        else: sentiment_label = "➖ NEUTRÁLNÍ"
         
         return sentiment_label, latest_headline, headlines
     except Exception:
-        return "➖ (News unavailable)", "Error loading news", []
+        return "➖ (Zprávy nedostupné)", "Chyba při načítání zpráv", []
 
-app_mode = st.radio("Select View:", [
-    "📊 Market Scanner & Patterns", 
+app_mode = st.radio("Vyberte zobrazení:", [
+    "📊 Tržní skener & Vzorce", 
     "🤖 Klondike Agent Hub",
-    "📘 User Guide"
+    "📘 Uživatelská příručka"
 ], horizontal=True)
 
-if app_mode == "📊 Market Scanner & Patterns":
-    if st.button("🚀 Run Scan & Pattern Analysis", type="primary", use_container_width=True):
+if app_mode == "📊 Tržní skener & Vzorce":
+    if st.button("🚀 Spustit sken a analýzu vzorců", type="primary", use_container_width=True):
         st.session_state.analysis_run = True
 
     if st.session_state.analysis_run:
-        with st.spinner("Processing S&P 500 benchmark, volume profiles, and chart patterns..."):
+        with st.spinner("Zpracovává se benchmark S&P 500, objemové profily a vzorce..."):
             try:
                 sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                 if isinstance(sp500.columns, pd.MultiIndex):
@@ -305,21 +307,21 @@ if app_mode == "📊 Market Scanner & Patterns":
                 atr_val = calculate_atr(data)
                 macd_line, macd_signal, macd_hist = calculate_macd(data)
                 
-                pattern_label = "⚖️ Standard Movement"
+                pattern_label = "⚖️ Standardní pohyb"
                 if is_breakout and is_vol_spike:
-                    pattern_label = "🚀 Strong Volume Breakout (Strongly Bullish)"
+                    pattern_label = "🚀 Silný objemový průraz (Silně býčí)"
                 elif is_breakout:
-                    pattern_label = "↗️ Price Breakout"
+                    pattern_label = "↗️ Cenový průraz"
                 elif is_squeeze:
-                    pattern_label = "📦 Consolidation (BB Squeeze)"
+                    pattern_label = "📦 Konsolidace (BB Squeeze)"
                 elif is_breakdown:
-                    pattern_label = "📉 Breakdown Warning / Selloff"
+                    pattern_label = "📉 Varování před propadem / Výprodej"
 
                 long_entry = actual_price
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
-                # Trend score & percentage calculation
+                # Výpočet síly a procenta trendu
                 rsi_score_component = (rsi_val - 50) / 50 * 30
                 rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
                 macd_score_component = 30 if macd_hist > 0 else -30
@@ -328,25 +330,25 @@ if app_mode == "📊 Market Scanner & Patterns":
                 trend_pct = float(np.clip(raw_trend_score, -100, 100))
 
                 if trend_pct >= 40:
-                    trend_text = f"Strong Bullish Trend (+{trend_pct:.1f}%)"
+                    trend_text = f"Silný býčí trend (+{trend_pct:.1f}%)"
                 elif trend_pct > 0:
-                    trend_text = f"Mild Bullish Trend (+{trend_pct:.1f}%)"
+                    trend_text = f"Mírný býčí trend (+{trend_pct:.1f}%)"
                 elif trend_pct <= -40:
-                    trend_text = f"Strong Bearish Trend / Selloff ({trend_pct:.1f}%)"
+                    trend_text = f"Silný medvědí trend / Výprodej ({trend_pct:.1f}%)"
                 else:
-                    trend_text = f"Mild Bearish Trend ({trend_pct:.1f}%)"
+                    trend_text = f"Mírný medvědí trend ({trend_pct:.1f}%)"
 
-                # Action recommendation logic
+                # Logika doporučení akce
                 if is_breakout and is_vol_spike and rsi_val < 70 and rs_vs_sp500 > 0:
-                    action_rec = "🚀 STRONG BUY (Immediate Breakout Confirmation)"
+                    action_rec = "🚀 SILNÝ NÁKUP (Okamžité potvrzení průrazu)"
                 elif is_squeeze and rs_vs_sp500 >= 0:
-                    action_rec = "📦 ACCUMULATE / DCA (Consolidation before expansion)"
+                    action_rec = "📦 AKUMULACE / DCA (Konsolidace před expanzí)"
                 elif rs_vs_sp500 > 0 and rsi_val <= 65:
-                    action_rec = "🛒 BUY THE DIP (Outperforming Relative Strength)"
+                    action_rec = "🛒 NÁKUP NA PROPADECH (Překonává relativní sílu)"
                 elif rsi_val > 75 or is_breakdown:
-                    action_rec = "⚠️ REDUCE / SELL (Overbought or Breakdown Risk)"
+                    action_rec = "⚠️ REDUKOVAT / PRODAT (Překoupeno nebo riziko propadu)"
                 else:
-                    action_rec = "⏳ WAIT / WATCH (Neutral setup, stand by)"
+                    action_rec = "⏳ ČEKAT / SLEDOVAT (Neutrální nastavení, vyčkejte)"
 
                 score = rs_vs_sp500 + (vol_ratio * 10) if is_vol_spike else rs_vs_sp500
 
@@ -377,12 +379,12 @@ if app_mode == "📊 Market Scanner & Patterns":
                 })
 
             except Exception as e:
-                st.error(f"Error processing {ticker}: {e}")
+                st.error(f"Chyba při zpracování {ticker}: {e}")
         
         if analyzed_count > 0 and valid_results:
             valid_results = sorted(valid_results, key=lambda x: x["score"], reverse=True)
 
-            st.markdown("### 📊 Filtered Scan Results")
+            st.markdown("### 📊 Výsledky filtrovaného skenu")
 
             for res in valid_results:
                 ticker = res["ticker"]
@@ -416,66 +418,66 @@ if app_mode == "📊 Market Scanner & Patterns":
                 future = model.make_future_dataframe(periods=PRED_DAYS)
                 forecast = model.predict(future)
 
-                with st.expander(f"📌 {ticker} | Price: ${actual_price:.2f} | Action: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
+                with st.expander(f"📌 {ticker} | Cena: ${actual_price:.2f} | Akce: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
                     
-                    st.markdown(f"### 🎯 Recommended Action: **{action_rec}**")
-                    st.markdown(f"📈 **Trend Analysis:** {trend_text}")
+                    st.markdown(f"### 🎯 Doporučení akce: **{action_rec}**")
+                    st.markdown(f"📈 **Analýza trendu:** {trend_text}")
                     st.progress(int((trend_pct + 100) / 2))
                     
                     st.markdown("---")
 
                     col1, col2, col3 = st.columns(3)
                     
-                    col1.markdown("**Price & Momentum**")
-                    col1.metric("Current Price", f"${actual_price:.2f}")
+                    col1.markdown("**Cena & Momentum**")
+                    col1.metric("Aktuální cena", f"${actual_price:.2f}")
                     col1.metric("RSI (14)", f"{rsi_val:.1f}")
                     
-                    col2.markdown("**Volume & Potential**")
-                    vol_status_text = "🔥 Volume Spike" if is_vol_spike else "⚖️ Normal Volume"
-                    col2.metric("Volume Ratio", f"{vol_ratio:.2f}x avg", delta=vol_status_text, delta_color="off")
-                    col2.metric("Gain / 1 $ Invested", f"+${gain_per_1_usd:.2f}")
+                    col2.markdown("**Objem & Potenciál**")
+                    vol_status_text = "🔥 Objemová špička" if is_vol_spike else "⚖️ Normální objem"
+                    col2.metric("Poměr objemu", f"{vol_ratio:.2f}x průměru", delta=vol_status_text, delta_color="off")
+                    col2.metric("Zisk / 1 $ investice", f"+${gain_per_1_usd:.2f}")
                     
-                    col3.markdown("**Benchmark & Patterns**")
-                    rs_color = "🟢 Outperforming" if rs_vs_sp500 > 0 else "🔴 Underperforming"
+                    col3.markdown("**Benchmark & Vzorce**")
+                    rs_color = "🟢 Nadprůměrný" if rs_vs_sp500 > 0 else "🔴 Podprůměrný"
                     col3.metric("vs S&P 500 (30d)", f"{rs_vs_sp500:+.2f}%", delta=rs_color, delta_color="off")
-                    col3.write(f"**Pattern:** {pattern_label}")
+                    col3.write(f"**Vzorec:** {pattern_label}")
 
                     st.markdown("---")
                     
-                    if st.button(f"🤖 AI Analyst: Evaluate Tech & News for {ticker}", key=f"ai_summary_btn_{ticker}"):
-                        with st.spinner("AI linking technical indicators with media sentiment..."):
-                            st.markdown("### 🧠 AI Market & Context Evaluation:")
+                    if st.button(f"🤖 AI Analytik: Posoudit techniku i zprávy pro {ticker}", key=f"ai_summary_btn_{ticker}"):
+                        with st.spinner("AI propojuje technické ukazatele s mediálním sentimentem..."):
+                            st.markdown("### 🧠 AI hodnocení trhu a souvislostí:")
                             
                             news_explanation = ""
                             if headlines_list:
-                                news_explanation = f"Current media feedback (e.g. *\"{latest_headline}\"*) indicates the market is reacting to headlines with a **{news_sentiment.lower()}** undertone. "
+                                news_explanation = f"Aktuální mediální ohlasy (např. *\"{latest_headline}\"*) naznačují, že trh reaguje na zprávy s **{news_sentiment.lower()}** podtónem. "
                             else:
-                                news_explanation = "No major fresh headlines were detected in primary news outlets, meaning price action is driven primarily by institutional order flow and technical buying/selling. "
+                                news_explanation = "Žádné výrazné čerstvé titulky v hlavních médiích nebyly detekovány, pohyb tak vychází primárně z technických nákupů/prodejů institucí. "
 
-                            vol_explanation = f"Volume activity stands at **{vol_ratio:.2f}x** the regular average ({'confirming aggressive institutional interest or panic' if is_vol_spike else 'under standard liquidity conditions'})."
+                            vol_explanation = f"Objemová aktivita dosahuje **{vol_ratio:.2f}násobku** běžného průměru ({'což potvrzuje silný zájem nebo paniku' if is_vol_spike else 'při běžné likviditě'})."
 
                             st.write(
-                                f"Asset **{ticker}** demonstrates a relative performance of **{rs_vs_sp500:+.2f}%** against the S&P 500 over the past 30 days. "
-                                f"Technical condition with RSI at **{rsi_val:.1f}** and pattern **{pattern_label}** signals: {trend_text}. \n\n"
-                                f"📰 **Why the stock is moving (AI News Explanation):**\n"
+                                f"Aktivum **{ticker}** vykazuje relativní výkonnost **{rs_vs_sp500:+.2f}%** vůči S&P 500 za posledních 30 dní. "
+                                f"Technický stav s RSI **{rsi_val:.1f}** a vzorcem **{pattern_label}** signalizuje: {trend_text}. \n\n"
+                                f"📰 **Proč se akcie takto chová (AI vysvětlení zpráv):**\n"
                                 f"{news_explanation} {vol_explanation}\n\n"
-                                f"💡 **Recommended Next Step:** **{action_rec}**."
+                                f"💡 **Doporučený další krok:** **{action_rec}**."
                             )
 
                     st.markdown("---")
-                    st.markdown("#### 🟢 SPOT SWING SETUP")
+                    st.markdown("#### 🟢 SPOT SWING NASTAVENÍ")
                     col_entry, col_sl, col_tp = st.columns(3)
-                    col_entry.success(f"**Ideal Entry:**\n${long_entry:.2f}")
+                    col_entry.success(f"**Ideální vstup:**\n${long_entry:.2f}")
                     col_sl.warning(f"**Stop Loss:**\n${long_stop_loss:.2f}")
                     col_tp.info(f"**Take Profit:**\n${long_take_profit:.2f}")
 
                     st.markdown("---")
-                    st.markdown("#### 💰 Position Sizing Calculator (No Leverage)")
+                    st.markdown("#### 💰 Kalkulačka velikosti pozice (bez páky)")
                     col_cap1, col_cap2 = st.columns(2)
                     with col_cap1:
-                        user_capital = st.number_input(f"Total Capital ($) for {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
+                        user_capital = st.number_input(f"Celkový kapitál ($) pro {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
                     with col_cap2:
-                        risk_pct = st.slider(f"Risk per Trade (% of Capital):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
+                        risk_pct = st.slider(f"Riziko na obchod (% kapitálu):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
 
                     allowed_risk_usd = user_capital * (risk_pct / 100.0)
                     risk_per_share = 1.5 * atr_val
@@ -485,41 +487,79 @@ if app_mode == "📊 Market Scanner & Patterns":
                     if total_position_value > user_capital:
                         shares_to_buy = int(user_capital / actual_price)
                         total_position_value = shares_to_buy * actual_price
-                        st.warning("⚠️ Initial calculation exceeded available cash. Adjusted to maximum possible share count.")
+                        st.warning("⚠️ Úvodní výpočet překročil dostupnou hotovost. Upraveno na maximální možný počet kusů.")
 
-                    st.info(f"👉 **Execution:** Buy **{shares_to_buy} shares** | **Total Value:** `${total_position_value:.2f}` | **Max Risk:** `${allowed_risk_usd:.2f}`")
+                    st.info(f"👉 **Provedení:** Koupit **{shares_to_buy} ks** | **Celková hodnota:** `${total_position_value:.2f}` | **Max. riziko:** `${allowed_risk_usd:.2f}`")
 
                     st.markdown("---")
-                    st.markdown("#### 📰 Recent News Feed")
+                    st.markdown("#### 📰 Přehled nejnovějších zpráv")
                     st.write(f"**Sentiment:** {news_sentiment}")
                     if headlines_list:
                         for h in headlines_list[:3]:
                             st.markdown(f"- *{h}*")
                     else:
-                        st.write("No news available to display.")
+                        st.write("Žádné zprávy k zobrazení.")
                     
                     if earnings_days != 999 and earnings_days <= 7:
-                        st.error(f"⚠️ **EARNINGS IN {earnings_days} DAYS:** ({earnings_date_str}). High gap risk!")
+                        st.error(f"⚠️ **VÝSLEDKY ZA {earnings_days} DNŮ:** ({earnings_date_str}). Vysoké riziko mezer v grafu (gap risk)!")
 
                     fig, ax = plt.subplots(figsize=(10, 4))
                     model.plot(forecast, ax=ax)
-                    ax.set_title(f"20-Day Price Forecast: {ticker}")
+                    ax.set_title(f"20denní cenová předpověď: {ticker}")
                     st.pyplot(fig)
 
         if analyzed_count == 0 or not valid_results:
-            st.warning("⚠️ No assets match your current pattern definitions and filter criteria.")
+            st.warning("⚠️ Žádná aktiva neodpovídají vašim aktuálním vzorcům a kritériím filtrů.")
 
 elif app_mode == "🤖 Klondike Agent Hub":
     st.subheader("🤖 Klondike Spot Agent Hub")
-    st.markdown("Monitoring automated volume anomaly detectors and consolidation breakout protocols.")
+    st.markdown("Sledování automatizovaných detektorů objemových anomálií a protokolů pro průrazy konsolidací.")
     agent = KlondikeExecutionAgent()
-    st.success(f"**Agent Status:** {agent.status}")
+    st.success(f"**Stav agenta:** {agent.status}")
     for proto in agent.protocols:
         st.markdown(f"- ✅ `{proto}`")
 
-elif app_mode == "📘 User Guide":
-    st.subheader("📘 User Guide & Strategy Manual")
-    st.markdown("1. **Gain / 1 $ Invested:** Calculates room toward recent highs for every 1 dollar of deployed capital.")
-    st.markdown("2. **S&P 500 Outperformance:** Filters stocks demonstrating positive relative strength against the primary market benchmark.")
-    st.markdown("3. **Volume Spikes & Squeezes:** Combines high volume confirmation with Bollinger Bands (Squeeze) for explosive swing trades.")
-    st.markdown("4. **AI News Evaluation:** Links technical patterns and volumes with current media headlines to explain *why* the stock is behaving a certain way.")
+elif app_mode == "📘 Uživatelská příručka":
+    st.subheader("📘 Uživatelská příručka & Průvodce strategiemi")
+    st.markdown("Vítejte v uživatelské příručce aplikace **Klondike Spot Swing Skener**. Tento nástroj slouží k pokročilé technické a fundamentální analýze akciových trhů se zaměřením na swingové obchodování na spotovém trhu (bez finanční páky).")
+    
+    st.markdown("---")
+    st.markdown("### 📊 Vysvětlení klíčových ukazatelů a metrik")
+    
+    st.markdown("""
+    1. **Zisk / 1 $ investice:** 
+       * Ukazuje matematický prostor (v dolarech) směrem k nedávným 20denním vrcholům na každý 1 dolar investovaného kapitálu. Pomáhá okamžitě identifikovat tituly s největším prostorem pro růst (upside potential).
+       
+    2. **Překonání S&P 500 (Relativní síla - RS):** 
+       * Porovnává 30denní výkonnost dané akcie s hlavním tržním indexem S&P 500 (`^GSPC`). Kladná hodnota znamená, že akcie trh poráží (institutionální zájem), záporná hodnota značí zaostávání.
+       
+    3. **RSI (Relative Strength Index, 14):** 
+       * Měřič momentu a rychlosti cenových změn v rozmezí 0–100.
+       * *Hodnoty nad 75* značí silné překoupení (riziko korekce).
+       * *Hodnoty pod 30* značí přeprodanost. Pro swingové nákupy jsou ideální zdravé hodnoty mezi 40–65 v rostoucím trendu.
+       
+    4. **Objemový poměr (Volume Ratio) & Špičky:** 
+       * Porovnává aktuální denní objem obchodů s 20denním průměrem. Pokud je poměr vyšší než `1.5x`, aplikace hlásí **objemovou špičku** (`🔥`), což potvrzuje vážný zájem velkých hráčů (institucí) o pohyb.
+       
+    5. **Bollinger Bands Squeeze (Konsolidace):** 
+       * Indikátor stlačení volatility. Když se Bollingerova pásma k sobě výrazně přiblíží (squeeze), znamená to, že trh odpočívá a připravuje se na prudký výbušný pohyb (průraz jedním směrem).
+       
+    6. **ATR (Average True Range, 14):** 
+       * Měřič aktuální tržní volatility. V aplikaci se používá pro dynamický výpočet **Stop Lossu** (1.5 násobek ATR pod vstupem) a **Take Profitu** (2.5 násobek ATR nad vstupem), což zajišťuje správný RRR (poměr risk/zisk).
+    """)
+
+    st.markdown("---")
+    st.markdown("### 🤖 Funkce AI Analytika & Zpráv")
+    st.markdown("""
+    * **Mediální sentiment:** Aplikace automaticky stahuje nejnovější titulky zpráv pro daný ticker, vyhledává klíčová býčí či medvědí slova a určuje celkový tón zpráv.
+    * **Riziko výsledků (Earnings Risk):** Pokud má společnost oznámit hospodářské výsledky za méně než 7 dnů, aplikace vás na to upozorní červeným varováním kvůli vysokému riziku mezer v grafu (gap risk).
+    * **Prophet Predikce:** V dolní části detailu každého aktivního titulu naleznete 20denní cenovou předpověď vygenerovanou algoritmem časových řad od Meta (Prophet).
+    """)
+
+    st.markdown("---")
+    st.markdown("### 💡 Doporučené postupy při obchodování")
+    st.markdown("""
+    * Využívejte postranní filtry k zacílení na konkrétní setupy (např. pouze průrazy s potvrzeným objemem).
+    * Vždy dodržujte doporučený **Stop Loss** zobrazený v detailu akcie.
+    * Přizpůsobte velikost pozice svému celkovému kapitálu pomocí integrované kalkulačky rizika.
+    """)

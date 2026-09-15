@@ -61,51 +61,32 @@ except Exception as e:
 st.sidebar.markdown("### 🔍 Vyhledávání aktiv")
 custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):", "").upper().strip()
 
+# Čistý seznam bez duplicit (včetně globálních firem v USD / ADR)
 DEFAULT_TICKERS = [
-    # --- Mega-Cap Core (Trillion-Dollar Club & Top Leaders) ---
-    "NVDA",  # NVIDIA (AI & Semiconductors)
-    "AAPL",  # Apple (Consumer Electronics)
-    "GOOGL", # Alphabet / Google (Tech & Search)
-    "MSFT",  # Microsoft (Cloud & Software)
-    "AMZN",  # Amazon (E-commerce & Cloud)
-    "META",  # Meta Platforms (Social Media & AI)
-    "AVGO",  # Broadcom (Semiconductors & Infrastructure)
-    "TSM",   # Taiwan Semiconductor (Chip Foundry)
-    "TSLA",  # Tesla (EV & Clean Energy)
-    "BRK-B", # Berkshire Hathaway (Conglomerate)
-    "WMT",   # Walmart (Retail Giant)
-    "LLY",   # Eli Lilly (Healthcare & Pharmaceuticals)
+    # --- Americké Mega-Cap a špičky ---
+    "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", "BRK-B", "WMT", "LLY",
+    "MU", "JPM", "ORCL", "XOM", "V", "MA", "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", 
+    "UNH", "PG", "ABBV", "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", "NKE",
     
-    # --- High-Cap Market Leaders & Stability ---
-    "MU",    # Micron Technology (Memory Chips & AI)
-    "JPM",   # JPMorgan Chase (Banking)
-    "ORCL",  # Oracle (Enterprise Cloud & Database)
-    "XOM",   # Exxon Mobil (Energy / Oil)
-    "V",     # Visa (Payments)
-    "MA",    # Mastercard (Payments)
-    "AMD",   # Advanced Micro Devices (Semiconductors)
-    "ASML",  # ASML Holding (Chip Manufacturing Equipment)
-    "NFLX",  # Netflix (Streaming Entertainment)
-    "JNJ",   # Johnson & Johnson (Healthcare)
-    "COST",  # Costco Wholesale (Retail)
-    "HD",    # Home Depot (Home Improvement Retail)
-    "CRM",   # Salesforce (Cloud CRM Software)
-    "UNH",   # UnitedHealth Group (Healthcare Services)
-    "PG",    # Procter & Gamble (Consumer Goods)
-    "ABBV",  # AbbVie (Biopharmaceuticals)
-    "BAC",   # Bank of America (Banking)
-    "IBM",   # International Business Machines (Tech)
-    "DIS",   # Walt Disney (Media & Entertainment)
-    "INTC",  # Intel (Semiconductors)
-    "KO",    # Coca-Cola (Consumer Defensive)
-    "PLTR",  # Palantir Technologies (AI & Data Analytics)
-    "UBER",  # Uber Technologies (Mobility & Logistics)
-    "PYPL",  # PayPal Holdings (Fintech)
-    "PFE",   # Pfizer (Pharmaceuticals)
-    "NKE",   # Nike (Apparel & Footwear)
+    # --- Světoví giganti obchodovaní v USD (ADR) ---
+    "ASML",  # ASML Holding (Nizozemsko - Polovodiče)
+    "TSM",   # Taiwan Semiconductor (Taiwan - Čipy)
+    "NVO",   # Novo Nordisk (Dánsko - Farmacie)
+    "BABA",  # Alibaba Group (Čína - E-commerce)
+    "TM",    # Toyota Motor (Japonsko - Automobily)
+    "AZN",   # AstraZeneca (Spojené království - Biopharmaceuticals)
+    "SHEL",  # Shell plc (Spojené království / Nizozemsko - Energetika)
+    "NSRGY", # Nestlé (Švýcarsko - Potraviny)
+    "SAP",   # SAP SE (Německo - Software)
+    "TTE",   # TotalEnergies (Francie - Energetika)
+    "HSBC",  # HSBC Holdings (Spojené království - Bankovnictví)
+    "SONY",  # Sony Group (Japonsko - Technologie a zábava)
+    "MELI",  # MercadoLibre (Latinská Amerika - E-commerce / Fintech)
+    "RIO",   # Rio Tinto (Spojené království / Austrálie - Těžba)
+    "BP",    # BP p.l.c. (Spojené království - Energetika)
     
     # --- Benchmark ---
-    "SPY"    # S&P 500 ETF (Market Benchmark)
+    "SPY"    # S&P 500 ETF
 ]
 
 active_tickers = list(DEFAULT_TICKERS)

@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -316,6 +316,11 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
+                # Výpočet Risk/Reward Ratio (R:R)
+                risk_amount = long_entry - long_stop_loss
+                reward_amount = long_take_profit - long_entry
+                risk_reward_ratio = (reward_amount / risk_amount) if risk_amount > 0 else 0
+
                 rsi_score_component = (rsi_val - 50) / 50 * 30
                 rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
                 macd_score_component = 30 if macd_hist > 0 else -30
@@ -361,6 +366,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     "long_entry": long_entry,
                     "long_stop_loss": long_stop_loss,
                     "long_take_profit": long_take_profit,
+                    "risk_reward_ratio": risk_reward_ratio,
                     "atr_val": atr_val,
                     "news_sentiment": news_sentiment,
                     "latest_headline": latest_headline,
@@ -395,6 +401,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 long_entry = res["long_entry"]
                 long_stop_loss = res["long_stop_loss"]
                 long_take_profit = res["long_take_profit"]
+                risk_reward_ratio = res["risk_reward_ratio"]
                 atr_val = res["atr_val"]
                 news_sentiment = res["news_sentiment"]
                 latest_headline = res["latest_headline"]
@@ -428,8 +435,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     st.markdown("#### 🌅 Ranní Pre-market přehled")
                     
                     if pre_price is not None and pre_change is not None:
-                        # Vizuální ukazatel formou mini progress baru / grafiky
-                        # Namapujeme změnu od -5% do +5% na škálu 0 až 100 pro st.progress
                         norm_progress = int(np.clip((pre_change + 5) / 10 * 100, 0, 100))
                         
                         col_pg1, col_pg2 = st.columns([3, 1])
@@ -444,7 +449,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                             else:
                                 st.markdown("⚖️ **Bez pohybu**")
                         
-                        # Kontrola anomálií
                         anomaly_text = evaluate_premarket_anomaly(pre_change)
                         if abs(pre_change) >= 3.0:
                             st.warning(anomaly_text)
@@ -481,7 +485,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                             
                             news_explanation = ""
                             if headlines_list:
-                                news_explanation = f"Aktuální mediální ohlasy (např. *\"{latest_headline}\"*) naznačují, že trh reaguje na zprávy s **{news_sentiment.lower()}** podtónem. "
+                                news_explanation = f"Aktuální mediální ohlasy (např. *\"{latest_headline}\"*) naznačují, že trh reaguje na zprávy s **{news_sentiment.lower()}** podtönem. "
                             else:
                                 news_explanation = "Žádné výrazné čerstvé titulky v hlavních médiích nebyly detekovány, pohyb tak vychází primárně z technických nákupů/prodejů institucí. "
 
@@ -496,11 +500,17 @@ if app_mode == "📊 Tržní skener & Vzorce":
                             )
 
                     st.markdown("---")
-                    st.markdown("#### 🟢 SPOT SWING NASTAVENÍ")
-                    col_entry, col_sl, col_tp = st.columns(3)
+                    st.markdown("#### 🟢 SPOT SWING NASTAVENÍ & RISK/REWARD")
+                    
+                    col_entry, col_sl, col_tp, col_rr = st.columns(4)
                     col_entry.success(f"**Ideální vstup:**\n${long_entry:.2f}")
                     col_sl.warning(f"**Stop Loss:**\n${long_stop_loss:.2f}")
                     col_tp.info(f"**Take Profit:**\n${long_take_profit:.2f}")
+                    
+                    if risk_reward_ratio >= 1.5:
+                        col_rr.success(f"**Risk/Reward (R:R):**\n1 : {risk_reward_ratio:.2f} 🟢")
+                    else:
+                        col_rr.error(f"**Risk/Reward (R:R):**\n1 : {risk_reward_ratio:.2f} ⚠️")
 
                     st.markdown("---")
                     st.markdown("#### 💰 Kalkulačka velikosti pozice (bez páky)")
@@ -529,7 +539,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                         for h in headlines_list[:3]:
                             st.markdown(f"- *{h}*")
                     else:
-                    
                         st.write("Žádné zprávy k zobrazení.")
                     
                     if earnings_days != 999 and earnings_days <= 7:
@@ -556,8 +565,14 @@ elif app_mode == "📘 Uživatelská příručka":
     st.markdown("Vítejte v uživatelské příručce aplikace **Klondike Spot Swing Skener**.")
     
     st.markdown("---")
+    st.markdown("### 🎯 Risk/Reward (R:R) poměr")
+    st.markdown("""
+    * **Automatický výpočet R:R:** Každý signál počítá poměr mezi vzdáleností cíle (Take Profit) a rizika (Stop Loss).
+    * **Barevné zvýraznění:** Hodnoty `1 : 1.5` a vyšší jsou zelené pro ideální nastavení obchodu, nižší hodnoty vás upozorní výstrahou.
+    """)
     st.markdown("### 🌅 Pre-market grafika a detekce anomálií")
     st.markdown("""
     * **Vizuální progress bar:** Každá rozbalená akcie teď obsahuje vizuální grafické znázornění pre-marketu, abyste na první pohled viděli, zda se trh probouzí v plusu či mínusu.
-    * **Automatické varování na anomálie:** Pokud pre-market pohyb překročí hranici `±3.0 %`, systém vás automaticky upozorní výstražným boxem na ranní skok či propad (potenciální riziko gapu při otevření).
+    * **Automatické varování na anomálie:** Pokud pre-market pohyb překročí hranici `±3.0 %`, systém vás automaticky upozorní výstražným boxem na ranní skok či propad.
     """)
+

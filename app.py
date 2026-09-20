@@ -42,11 +42,11 @@ st.markdown("""
 
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Aktivní a připraveno (pouze Spot)"
-        self.protocols = ["Sledování spotového trendu", "Dynamická ochrana volatility", "Potvrzení objemu a vzorců"]
+        self.status = "Aktivní a připraveno (včetně Pre-market monitoringu)"
+        self.protocols = ["Sledování spotového trendu", "Analýza pre-market impulzů", "Detekce ranních anomálií"]
 
-st.title("📈 AI Spot Swing Skener & Analytik Vzorců")
-st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, detekcí objemových špiček, průrazů a relativní síly vůči S&P 500.</p>", unsafe_allow_html=True)
+st.title("📈 AI Spot Swing Skener & Pre-market Monitor")
+st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, sledováním pre-marketu, ranními anomáliemi a detekcí objemových špiček.</p>", unsafe_allow_html=True)
 
 # Inicializace Supabase databáze
 try:
@@ -61,32 +61,17 @@ except Exception as e:
 st.sidebar.markdown("### 🔍 Vyhledávání aktiv")
 custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):", "").upper().strip()
 
-# Čistý seznam bez duplicit (včetně globálních firem v USD / ADR)
 DEFAULT_TICKERS = [
     # --- Americké Mega-Cap a špičky ---
     "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", "BRK-B", "WMT", "LLY",
     "MU", "JPM", "ORCL", "XOM", "V", "MA", "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", 
     "UNH", "PG", "ABBV", "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", "NKE",
     
-    # --- Světoví giganti obchodovaní v USD (ADR) ---
-    "ASML",  # ASML Holding (Nizozemsko - Polovodiče)
-    "TSM",   # Taiwan Semiconductor (Taiwan - Čipy)
-    "NVO",   # Novo Nordisk (Dánsko - Farmacie)
-    "BABA",  # Alibaba Group (Čína - E-commerce)
-    "TM",    # Toyota Motor (Japonsko - Automobily)
-    "AZN",   # AstraZeneca (Spojené království - Biopharmaceuticals)
-    "SHEL",  # Shell plc (Spojené království / Nizozemsko - Energetika)
-    "NSRGY", # Nestlé (Švýcarsko - Potraviny)
-    "SAP",   # SAP SE (Německo - Software)
-    "TTE",   # TotalEnergies (Francie - Energetika)
-    "HSBC",  # HSBC Holdings (Spojené království - Bankovnictví)
-    "SONY",  # Sony Group (Japonsko - Technologie a zábava)
-    "MELI",  # MercadoLibre (Latinská Amerika - E-commerce / Fintech)
-    "RIO",   # Rio Tinto (Spojené království / Austrálie - Těžba)
-    "BP",    # BP p.l.c. (Spojené království - Energetika)
+    # --- Světoví giganti v USD (ADR) ---
+    "ASML", "TSM", "NVO", "BABA", "TM", "AZN", "SHEL", "NSRGY", "SAP", "TTE", "HSBC", "SONY", "MELI", "RIO", "BP",
     
     # --- Benchmark ---
-    "SPY"    # S&P 500 ETF
+    "SPY"
 ]
 
 active_tickers = list(DEFAULT_TICKERS)
@@ -97,7 +82,7 @@ if custom_ticker_input and custom_ticker_input not in active_tickers:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filtry a strategie")
 
-filter_high_gain = st.sidebar.toggle("💵 Zisk / 1 $ >= 0.06 $", value=False, help="Zobrazí pouze aktiva s růstovým potenciálem k 20dennímu vrcholu 0.06 $ nebo více na 1 $ investice.")
+filter_high_gain = st.sidebar.toggle("💵 Zisk / 1 $>= 0.06$", value=False)
 filter_breakout = st.sidebar.toggle("🚀 Pouze aktivní průrazy", value=False)
 filter_squeeze = st.sidebar.toggle("📦 Pouze konsolidace (BB Squeeze)", value=False)
 filter_volume = st.sidebar.toggle("📊 Pouze s potvrzeným objemem", value=False)
@@ -160,6 +145,33 @@ def detect_patterns(data):
     is_squeeze = bool(bandwidth.iloc[-1] < (bw_rolling_mean * 0.8)) if not np.isnan(bw_rolling_mean) else False
     
     return is_breakout, is_breakdown, is_squeeze
+
+def get_premarket_data(ticker_obj):
+    try:
+        info = ticker_obj.info
+        pre_price = info.get('preMarketPrice', None)
+        prev_close = info.get('regularMarketPreviousClose', info.get('previousClose', None))
+        if pre_price and prev_close:
+            change_pct = ((pre_price - prev_close) / prev_close) * 100
+            return float(pre_price), float(change_pct)
+    except Exception:
+        pass
+    return None, None
+
+def evaluate_premarket_anomaly(pre_change):
+    if pre_change is None:
+        return "Pre-market data nejsou k dispozici (mimo obchodní hodiny nebo víkend)."
+    
+    if pre_change >= 3.0:
+        return f"🚨 **VÝRAZNÝ BÝČÍ PRE-MARKET SKOK (+{pre_change:.2f}%):** Akcie vykazuje silný ranní nákupní tlak! Často značí reakci na čerstvé zprávy nebo upgrade od analytiků. Očekávejte otevření s mezerou (gap up)."
+    elif pre_change <= -3.0:
+        return f"⚠️ **VÝRAZNÝ MEDVĚDÍ PRE-MARKET PROPAD ({pre_change:.2f}%):** Na pre-marketu probíhá silný výprodej! Pozor na negativní zprávy, horší výsledky nebo paniku. Riziko gap down."
+    elif pre_change > 0:
+        return f"🟢 **Mírný ranní růst (+{pre_change:.2f}%):** Klidný pre-market s mírně pozitivním sentimentem."
+    elif pre_change < 0:
+        return f"🔴 **Mírný ranní pokles ({pre_change:.2f}%):** Klidný pre-market s lehkým prodejním tlakem."
+    else:
+        return "⚖️ Pre-market je bez pohybu (změna 0 %). Žádná ranní anomálie."
 
 def get_next_earnings_days(ticker_obj):
     try:
@@ -226,7 +238,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
         st.session_state.analysis_run = True
 
     if st.session_state.analysis_run:
-        with st.spinner("Zpracovává se benchmark S&P 500, objemové profily a vzorce..."):
+        with st.spinner("Zpracovává se benchmark S&P 500, pre-market anomálie a vzorce..."):
             try:
                 sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                 if isinstance(sp500.columns, pd.MultiIndex):
@@ -254,6 +266,8 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     data.columns = data.columns.get_level_values(0)
 
                 actual_price = float(data['Close'].iloc[-1])
+                
+                pre_price, pre_change = get_premarket_data(t_obj)
                 
                 peak_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
                 diff_usd = peak_20d - actual_price
@@ -302,7 +316,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
-                # Výpočet síly a procenta trendu
                 rsi_score_component = (rsi_val - 50) / 50 * 30
                 rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
                 macd_score_component = 30 if macd_hist > 0 else -30
@@ -319,7 +332,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 else:
                     trend_text = f"Mírný medvědí trend ({trend_pct:.1f}%)"
 
-                # Logika doporučení akce
                 if is_breakout and is_vol_spike and rsi_val < 70 and rs_vs_sp500 > 0:
                     action_rec = "🚀 SILNÝ NÁKUP (Okamžité potvrzení průrazu)"
                 elif is_squeeze and rs_vs_sp500 >= 0:
@@ -338,6 +350,8 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     "t_obj": t_obj,
                     "data": data,
                     "actual_price": actual_price,
+                    "pre_price": pre_price,
+                    "pre_change": pre_change,
                     "gain_per_1_usd": gain_per_1_usd,
                     "rs_vs_sp500": rs_vs_sp500,
                     "rsi_val": rsi_val,
@@ -370,6 +384,8 @@ if app_mode == "📊 Tržní skener & Vzorce":
             for res in valid_results:
                 ticker = res["ticker"]
                 actual_price = res["actual_price"]
+                pre_price = res["pre_price"]
+                pre_change = res["pre_change"]
                 gain_per_1_usd = res["gain_per_1_usd"]
                 rs_vs_sp500 = res["rs_vs_sp500"]
                 rsi_val = res["rsi_val"]
@@ -399,18 +415,52 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 future = model.make_future_dataframe(periods=PRED_DAYS)
                 forecast = model.predict(future)
 
-                with st.expander(f"📌 {ticker} | Cena: ${actual_price:.2f} | Akce: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]} | Trend: {trend_text}"):
+                pre_str = f" | Pre-market: ${pre_price:.2f} ({pre_change:+.2f}%)" if pre_price is not None else ""
+
+                with st.expander(f"📌 {ticker} | Cena: ${actual_price:.2f}{pre_str} | Akce: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]}"):
                     
                     st.markdown(f"### 🎯 Doporučení akce: **{action_rec}**")
                     st.markdown(f"📈 **Analýza trendu:** {trend_text}")
                     st.progress(int((trend_pct + 100) / 2))
                     
+                    # --- JEDNODUCHÁ PRE-MARKET GRAFIKA & ANOMÁLIE ---
+                    st.markdown("---")
+                    st.markdown("#### 🌅 Ranní Pre-market přehled")
+                    
+                    if pre_price is not None and pre_change is not None:
+                        # Vizuální ukazatel formou mini progress baru / grafiky
+                        # Namapujeme změnu od -5% do +5% na škálu 0 až 100 pro st.progress
+                        norm_progress = int(np.clip((pre_change + 5) / 10 * 100, 0, 100))
+                        
+                        col_pg1, col_pg2 = st.columns([3, 1])
+                        with col_pg1:
+                            st.write(f"Pre-market kurz: **${pre_price:.2f}** (Změna: **{pre_change:+.2f}%**)")
+                            st.progress(norm_progress)
+                        with col_pg2:
+                            if pre_change > 0:
+                                st.markdown("🟢 **Ranní růst**")
+                            elif pre_change < 0:
+                                st.markdown("🔴 **Ranní pokles**")
+                            else:
+                                st.markdown("⚖️ **Bez pohybu**")
+                        
+                        # Kontrola anomálií
+                        anomaly_text = evaluate_premarket_anomaly(pre_change)
+                        if abs(pre_change) >= 3.0:
+                            st.warning(anomaly_text)
+                        else:
+                            st.info(anomaly_text)
+                    else:
+                        st.caption("ℹ️ Pre-market data nejsou v tuto chvíli k dispozici (mimo obchodní hodiny, o víkendu, nebo akcie nepodporuje feed).")
+
                     st.markdown("---")
 
                     col1, col2, col3 = st.columns(3)
                     
                     col1.markdown("**Cena & Momentum**")
-                    col1.metric("Aktuální cena", f"${actual_price:.2f}")
+                    col1.metric("Závěrečná cena", f"${actual_price:.2f}")
+                    if pre_price is not None:
+                        col1.metric("Pre-market cena", f"${pre_price:.2f}", delta=f"{pre_change:+.2f}%")
                     col1.metric("RSI (14)", f"{rsi_val:.1f}")
                     
                     col2.markdown("**Objem & Potenciál**")
@@ -435,13 +485,13 @@ if app_mode == "📊 Tržní skener & Vzorce":
                             else:
                                 news_explanation = "Žádné výrazné čerstvé titulky v hlavních médiích nebyly detekovány, pohyb tak vychází primárně z technických nákupů/prodejů institucí. "
 
-                            vol_explanation = f"Objemová aktivita dosahuje **{vol_ratio:.2f}násobku** běžného průměru ({'což potvrzuje silný zájem nebo paniku' if is_vol_spike else 'při běžné likviditě'})."
+                            pre_explanation = f"V pre-marketu se akcie obchoduje za ${pre_price:.2f} ({pre_change:+.2f}%), což napovídá otevírací náladě." if pre_price else ""
 
                             st.write(
                                 f"Aktivum **{ticker}** vykazuje relativní výkonnost **{rs_vs_sp500:+.2f}%** vůči S&P 500 za posledních 30 dní. "
                                 f"Technický stav s RSI **{rsi_val:.1f}** a vzorcem **{pattern_label}** signalizuje: {trend_text}. \n\n"
                                 f"📰 **Proč se akcie takto chová (AI vysvětlení zpráv):**\n"
-                                f"{news_explanation} {vol_explanation}\n\n"
+                                f"{news_explanation} {pre_explanation}\n\n"
                                 f"💡 **Doporučený další krok:** **{action_rec}**."
                             )
 
@@ -479,6 +529,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                         for h in headlines_list[:3]:
                             st.markdown(f"- *{h}*")
                     else:
+                    
                         st.write("Žádné zprávy k zobrazení.")
                     
                     if earnings_days != 999 and earnings_days <= 7:
@@ -494,7 +545,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
 
 elif app_mode == "🤖 Klondike Agent Hub":
     st.subheader("🤖 Klondike Spot Agent Hub")
-    st.markdown("Sledování automatizovaných detektorů objemových anomálií a protokolů pro průrazy konsolidací.")
+    st.markdown("Sledování automatizovaných detektorů ranních impulzů, pre-market anomálií a objemových průrazů.")
     agent = KlondikeExecutionAgent()
     st.success(f"**Stav agenta:** {agent.status}")
     for proto in agent.protocols:
@@ -502,45 +553,11 @@ elif app_mode == "🤖 Klondike Agent Hub":
 
 elif app_mode == "📘 Uživatelská příručka":
     st.subheader("📘 Uživatelská příručka & Průvodce strategiemi")
-    st.markdown("Vítejte v uživatelské příručce aplikace **Klondike Spot Swing Skener**. Tento nástroj slouží k pokročilé technické a fundamentální analýze akciových trhů se zaměřením na swingové obchodování na spotovém trhu (bez finanční páky).")
+    st.markdown("Vítejte v uživatelské příručce aplikace **Klondike Spot Swing Skener**.")
     
     st.markdown("---")
-    st.markdown("### 📊 Vysvětlení klíčových ukazatelů a metrik")
-    
+    st.markdown("### 🌅 Pre-market grafika a detekce anomálií")
     st.markdown("""
-    1. **Zisk / 1 $ investice:** 
-       * Ukazuje matematický prostor (v dolarech) směrem k nedávným 20denním vrcholům na každý 1 dolar investovaného kapitálu. Pomáhá okamžitě identifikovat tituly s největším prostorem pro růst (upside potential).
-       
-    2. **Překonání S&P 500 (Relativní síla - RS):** 
-       * Porovnává 30denní výkonnost dané akcie s hlavním tržním indexem S&P 500 (`^GSPC`). Kladná hodnota znamená, že akcie trh poráží (institutionální zájem), záporná hodnota značí zaostávání.
-       
-    3. **RSI (Relative Strength Index, 14):** 
-       * Měřič momentu a rychlosti cenových změn v rozmezí 0–100.
-       * *Hodnoty nad 75* značí silné překoupení (riziko korekce).
-       * *Hodnoty pod 30* značí přeprodanost. Pro swingové nákupy jsou ideální zdravé hodnoty mezi 40–65 v rostoucím trendu.
-       
-    4. **Objemový poměr (Volume Ratio) & Špičky:** 
-       * Porovnává aktuální denní objem obchodů s 20denním průměrem. Pokud je poměr vyšší než `1.5x`, aplikace hlásí **objemovou špičku** (`🔥`), což potvrzuje vážný zájem velkých hráčů (institucí) o pohyb.
-       
-    5. **Bollinger Bands Squeeze (Konsolidace):** 
-       * Indikátor stlačení volatility. Když se Bollingerova pásma k sobě výrazně přiblíží (squeeze), znamená to, že trh odpočívá a připravuje se na prudký výbušný pohyb (průraz jedním směrem).
-       
-    6. **ATR (Average True Range, 14):** 
-       * Měřič aktuální tržní volatility. V aplikaci se používá pro dynamický výpočet **Stop Lossu** (1.5 násobek ATR pod vstupem) a **Take Profitu** (2.5 násobek ATR nad vstupem), což zajišťuje správný RRR (poměr risk/zisk).
-    """)
-
-    st.markdown("---")
-    st.markdown("### 🤖 Funkce AI Analytika & Zpráv")
-    st.markdown("""
-    * **Mediální sentiment:** Aplikace automaticky stahuje nejnovější titulky zpráv pro daný ticker, vyhledává klíčová býčí či medvědí slova a určuje celkový tón zpráv.
-    * **Riziko výsledků (Earnings Risk):** Pokud má společnost oznámit hospodářské výsledky za méně než 7 dnů, aplikace vás na to upozorní červeným varováním kvůli vysokému riziku mezer v grafu (gap risk).
-    * **Prophet Predikce:** V dolní části detailu každého aktivního titulu naleznete 20denní cenovou předpověď vygenerovanou algoritmem časových řad od Meta (Prophet).
-    """)
-
-    st.markdown("---")
-    st.markdown("### 💡 Doporučené postupy při obchodování")
-    st.markdown("""
-    * Využívejte postranní filtry k zacílení na konkrétní setupy (např. pouze průrazy s potvrzeným objemem).
-    * Vždy dodržujte doporučený **Stop Loss** zobrazený v detailu akcie.
-    * Přizpůsobte velikost pozice svému celkovému kapitálu pomocí integrované kalkulačky rizika.
+    * **Vizuální progress bar:** Každá rozbalená akcie teď obsahuje vizuální grafické znázornění pre-marketu, abyste na první pohled viděli, zda se trh probouzí v plusu či mínusu.
+    * **Automatické varování na anomálie:** Pokud pre-market pohyb překročí hranici `±3.0 %`, systém vás automaticky upozorní výstražným boxem na ranní skok či propad (potenciální riziko gapu při otevření).
     """)

@@ -71,7 +71,7 @@ st.markdown("""
         border: 1px solid #1f2937;
     }
     </style>
-""", unsafe_layout=True)
+""", unsafe_allow_html=True)
 
 class KlondikeExecutionAgent:
     def __init__(self):
@@ -189,20 +189,6 @@ def get_premarket_data(ticker_obj):
     except Exception:
         pass
     return None, None
-
-def evaluate_premarket_anomaly(pre_change):
-    if pre_change is None:
-        return "Pre-market data nejsou k dispozici (mimo obchodní hodiny)."
-    if pre_change >= 3.0:
-        return f"🚨 **BÝČÍ PRE-MARKET SKOK (+{pre_change:.2f}%):** Silný ranní nákupní tlak."
-    elif pre_change <= -3.0:
-        return f"⚠️ **MEDVĚDÍ PRE-MARKET PROPAD ({pre_change:.2f}%):** Ranní výprodej."
-    elif pre_change > 0:
-        return f"🟢 Mírný ranní růst (+{pre_change:.2f}%)."
-    elif pre_change < 0:
-        return f"🔴 Mírný ranní pokles ({pre_change:.2f}%)."
-    else:
-        return "⚖️ Pre-market bez pohybu (0%)."
 
 def get_next_earnings_days(ticker_obj):
     try:

@@ -42,35 +42,30 @@ st.markdown("""
 
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Aktivní a připraveno (včetně Pre-market monitoringu)"
-        self.protocols = ["Sledování spotového trendu", "Analýza pre-market impulzů", "Detekce ranních anomálií"]
+        self.status = "Aktivní a připraveno (včetně zápisu predikcí do DB)"
+        self.protocols = ["Sledování spotového trendu", "Analýza pre-market impulzů", "Zápis a vyhodnocení AI predikcí"]
 
-st.title("📈 AI Spot Swing Skener & Pre-market Monitor")
-st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, sledováním pre-marketu, ranními anomáliemi a detekcí objemových špiček.</p>", unsafe_allow_html=True)
+st.title("📈 AI Spot Swing Skener & Predikční Modul")
+st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, sledováním pre-marketu a učením se z historických predikcí.</p>", unsafe_allow_html=True)
 
 # Inicializace Supabase databáze
+supabase = None
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    supabase = None
-    st.sidebar.warning("⚠️ Databáze nepřipojena")
+    st.sidebar.warning("⚠️ Databáze nepřipojena (zkontrolujte st.secrets)")
 
 # Postranní panel pro vlastní tickery a filtry
 st.sidebar.markdown("### 🔍 Vyhledávání aktiv")
 custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):", "").upper().strip()
 
 DEFAULT_TICKERS = [
-    # --- Americké Mega-Cap a špičky ---
     "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", "BRK-B", "WMT", "LLY",
     "MU", "JPM", "ORCL", "XOM", "V", "MA", "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", 
     "UNH", "PG", "ABBV", "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", "NKE",
-    
-    # --- Světoví giganti v USD (ADR) ---
     "ASML", "TSM", "NVO", "BABA", "TM", "AZN", "SHEL", "NSRGY", "SAP", "TTE", "HSBC", "SONY", "MELI", "RIO", "BP",
-    
-    # --- Benchmark ---
     "SPY"
 ]
 
@@ -163,15 +158,15 @@ def evaluate_premarket_anomaly(pre_change):
         return "Pre-market data nejsou k dispozici (mimo obchodní hodiny nebo víkend)."
     
     if pre_change >= 3.0:
-        return f"🚨 **VÝRAZNÝ BÝČÍ PRE-MARKET SKOK (+{pre_change:.2f}%):** Akcie vykazuje silný ranní nákupní tlak! Často značí reakci na čerstvé zprávy nebo upgrade od analytiků. Očekávejte otevření s mezerou (gap up)."
+        return f"🚨 **VÝRAZNÝ BÝČÍ PRE-MARKET SKOK (+{pre_change:.2f}%):** Akcie vykazuje silný ranní nákupní tlak!"
     elif pre_change <= -3.0:
-        return f"⚠️ **VÝRAZNÝ MEDVĚDÍ PRE-MARKET PROPAD ({pre_change:.2f}%):** Na pre-marketu probíhá silný výprodej! Pozor na negativní zprávy, horší výsledky nebo paniku. Riziko gap down."
+        return f"⚠️ **VÝRAZNÝ MEDVĚDÍ PRE-MARKET PROPAD ({pre_change:.2f}%):** Na pre-marketu probíhá silný výprodej!"
     elif pre_change > 0:
-        return f"🟢 **Mírný ranní růst (+{pre_change:.2f}%):** Klidný pre-market s mírně pozitivním sentimentem."
+        return f"🟢 **Mírný ranní růst (+{pre_change:.2f}%):** Klidný pre-market."
     elif pre_change < 0:
-        return f"🔴 **Mírný ranní pokles ({pre_change:.2f}%):** Klidný pre-market s lehkým prodejním tlakem."
+        return f"🔴 **Mírný ranní pokles ({pre_change:.2f}%):** Lehký prodejní tlak."
     else:
-        return "⚖️ Pre-market je bez pohybu (změna 0 %). Žádná ranní anomálie."
+        return "⚖️ Pre-market je bez pohybu (0 %). Žádná ranní anomálie."
 
 def get_next_earnings_days(ticker_obj):
     try:
@@ -229,16 +224,17 @@ def analyze_news_sentiment(ticker_obj):
 
 app_mode = st.radio("Vyberte zobrazení:", [
     "📊 Tržní skener & Vzorce", 
+    "🧠 Historie predikcí & Učení AI",
     "🤖 Klondike Agent Hub",
     "📘 Uživatelská příručka"
 ], horizontal=True)
 
 if app_mode == "📊 Tržní skener & Vzorce":
-    if st.button("🚀 Spustit sken a analýzu vzorců", type="primary", use_container_width=True):
+    if st.button("🚀 Spustit sken, analýzu vzorců a zapsat predikce do DB", type="primary", use_container_width=True):
         st.session_state.analysis_run = True
 
     if st.session_state.analysis_run:
-        with st.spinner("Zpracovává se benchmark S&P 500, pre-market anomálie a vzorce..."):
+        with st.spinner("Zpracovává se benchmark S&P 500, pre-market anomálie, modely a ukládání do DB..."):
             try:
                 sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                 if isinstance(sp500.columns, pd.MultiIndex):
@@ -266,7 +262,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     data.columns = data.columns.get_level_values(0)
 
                 actual_price = float(data['Close'].iloc[-1])
-                
                 pre_price, pre_change = get_premarket_data(t_obj)
                 
                 peak_20d = float(data['Close'].rolling(window=20).max().iloc[-1])
@@ -316,10 +311,41 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 long_stop_loss = actual_price - (1.5 * atr_val)
                 long_take_profit = actual_price + (2.5 * atr_val)
 
-                # Výpočet Risk/Reward Ratio (R:R)
+                # Risk/Reward Ratio (R:R)
                 risk_amount = long_entry - long_stop_loss
                 reward_amount = long_take_profit - long_entry
                 risk_reward_ratio = (reward_amount / risk_amount) if risk_amount > 0 else 0
+
+                # Spočítáme Prophet předpověď pro získání cílové ceny za PRED_DAYS dní
+                df = data.reset_index()[['Date', 'Close']]
+                df.columns = ['ds', 'y']
+                df['ds'] = df['ds'].dt.tz_localize(None)
+
+                model = Prophet(daily_seasonality=False, yearly_seasonality=True)
+                model.fit(df)
+                future = model.make_future_dataframe(periods=PRED_DAYS)
+                forecast = model.predict(future)
+                
+                predicted_price_20d = float(forecast['yhat'].iloc[-1])
+                target_date_val = (datetime.now() + timedelta(days=PRED_DAYS)).strftime('%Y-%m-%d')
+
+                # ZÁPIS PREDIKCE DO SUPABASE DATABÁZE
+                if supabase is not None:
+                    try:
+                        # Zkontrolujeme, zda už dnes nebyla pro tento ticker uložena predikce, abychom zbytečně duplicitně nespamovali
+                        today_str = datetime.now().strftime('%Y-%m-%d')
+                        existing = supabase.table("predictions").select("id").eq("ticker", ticker).gte("created_at", today_str).execute()
+                        if not existing.data:
+                            supabase.table("predictions").insert({
+                                "ticker": ticker,
+                                "entry_price": float(actual_price),
+                                "predicted_price": float(predicted_price_20d),
+                                "target_date": target_date_val,
+                                "status": "PENDING"
+                            }).execute()
+                    except Exception as db_err:
+                        # Tiché zalogování chyby zápisu, aby aplikace nespadla, pokud chybí tabulka
+                        pass
 
                 rsi_score_component = (rsi_val - 50) / 50 * 30
                 rs_score_component = np.clip(rs_vs_sp500, -20, 20) / 20 * 40
@@ -346,7 +372,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 elif rsi_val > 75 or is_breakdown:
                     action_rec = "⚠️ REDUKOVAT / PRODAT (Překoupeno nebo riziko propadu)"
                 else:
-                    action_rec = "⏳ ČEKAT / SLEDOVAT (Neutrální nastavení, vyčkejte)"
+                    action_rec = "⏳ ČEKAT / SLEDOVAT (Neutrální nastavení)"
 
                 score = rs_vs_sp500 + (vol_ratio * 10) if is_vol_spike else rs_vs_sp500
 
@@ -376,7 +402,9 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     "trend_pct": trend_pct,
                     "trend_text": trend_text,
                     "action_rec": action_rec,
-                    "score": score
+                    "score": score,
+                    "forecast": forecast,
+                    "model": model
                 })
 
             except Exception as e:
@@ -402,7 +430,6 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 long_stop_loss = res["long_stop_loss"]
                 long_take_profit = res["long_take_profit"]
                 risk_reward_ratio = res["risk_reward_ratio"]
-                atr_val = res["atr_val"]
                 news_sentiment = res["news_sentiment"]
                 latest_headline = res["latest_headline"]
                 headlines_list = res["headlines_list"]
@@ -411,16 +438,9 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 trend_pct = res["trend_pct"]
                 trend_text = res["trend_text"]
                 action_rec = res["action_rec"]
-                data = res["data"]
-
-                df = data.reset_index()[['Date', 'Close']]
-                df.columns = ['ds', 'y']
-                df['ds'] = df['ds'].dt.tz_localize(None)
-
-                model = Prophet(daily_seasonality=False, yearly_seasonality=True)
-                model.fit(df)
-                future = model.make_future_dataframe(periods=PRED_DAYS)
-                forecast = model.predict(future)
+                forecast = res["forecast"]
+                model = res["model"]
+                atr_val = res["atr_val"]
 
                 pre_str = f" | Pre-market: ${pre_price:.2f} ({pre_change:+.2f}%)" if pre_price is not None else ""
 
@@ -430,37 +450,28 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     st.markdown(f"📈 **Analýza trendu:** {trend_text}")
                     st.progress(int((trend_pct + 100) / 2))
                     
-                    # --- JEDNODUCHÁ PRE-MARKET GRAFIKA & ANOMÁLIE ---
                     st.markdown("---")
                     st.markdown("#### 🌅 Ranní Pre-market přehled")
                     
                     if pre_price is not None and pre_change is not None:
                         norm_progress = int(np.clip((pre_change + 5) / 10 * 100, 0, 100))
-                        
                         col_pg1, col_pg2 = st.columns([3, 1])
                         with col_pg1:
                             st.write(f"Pre-market kurz: **${pre_price:.2f}** (Změna: **{pre_change:+.2f}%**)")
                             st.progress(norm_progress)
                         with col_pg2:
-                            if pre_change > 0:
-                                st.markdown("🟢 **Ranní růst**")
-                            elif pre_change < 0:
-                                st.markdown("🔴 **Ranní pokles**")
-                            else:
-                                st.markdown("⚖️ **Bez pohybu**")
+                            if pre_change > 0: st.markdown("🟢 **Ranní růst**")
+                            elif pre_change < 0: st.markdown("🔴 **Ranní pokles**")
+                            else: st.markdown("⚖️ **Bez pohybu**")
                         
                         anomaly_text = evaluate_premarket_anomaly(pre_change)
-                        if abs(pre_change) >= 3.0:
-                            st.warning(anomaly_text)
-                        else:
-                            st.info(anomaly_text)
+                        if abs(pre_change) >= 3.0: st.warning(anomaly_text)
+                        else: st.info(anomaly_text)
                     else:
-                        st.caption("ℹ️ Pre-market data nejsou v tuto chvíli k dispozici (mimo obchodní hodiny, o víkendu, nebo akcie nepodporuje feed).")
+                        st.caption("ℹ️ Pre-market data nejsou k dispozici.")
 
                     st.markdown("---")
-
                     col1, col2, col3 = st.columns(3)
-                    
                     col1.markdown("**Cena & Momentum**")
                     col1.metric("Závěrečná cena", f"${actual_price:.2f}")
                     if pre_price is not None:
@@ -478,30 +489,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                     col3.write(f"**Vzorec:** {pattern_label}")
 
                     st.markdown("---")
-                    
-                    if st.button(f"🤖 AI Analytik: Posoudit techniku i zprávy pro {ticker}", key=f"ai_summary_btn_{ticker}"):
-                        with st.spinner("AI propojuje technické ukazatele s mediálním sentimentem..."):
-                            st.markdown("### 🧠 AI hodnocení trhu a souvislostí:")
-                            
-                            news_explanation = ""
-                            if headlines_list:
-                                news_explanation = f"Aktuální mediální ohlasy (např. *\"{latest_headline}\"*) naznačují, že trh reaguje na zprávy s **{news_sentiment.lower()}** podtönem. "
-                            else:
-                                news_explanation = "Žádné výrazné čerstvé titulky v hlavních médiích nebyly detekovány, pohyb tak vychází primárně z technických nákupů/prodejů institucí. "
-
-                            pre_explanation = f"V pre-marketu se akcie obchoduje za ${pre_price:.2f} ({pre_change:+.2f}%), což napovídá otevírací náladě." if pre_price else ""
-
-                            st.write(
-                                f"Aktivum **{ticker}** vykazuje relativní výkonnost **{rs_vs_sp500:+.2f}%** vůči S&P 500 za posledních 30 dní. "
-                                f"Technický stav s RSI **{rsi_val:.1f}** a vzorcem **{pattern_label}** signalizuje: {trend_text}. \n\n"
-                                f"📰 **Proč se akcie takto chová (AI vysvětlení zpráv):**\n"
-                                f"{news_explanation} {pre_explanation}\n\n"
-                                f"💡 **Doporučený další krok:** **{action_rec}**."
-                            )
-
-                    st.markdown("---")
                     st.markdown("#### 🟢 SPOT SWING NASTAVENÍ & RISK/REWARD")
-                    
                     col_entry, col_sl, col_tp, col_rr = st.columns(4)
                     col_entry.success(f"**Ideální vstup:**\n${long_entry:.2f}")
                     col_sl.warning(f"**Stop Loss:**\n${long_stop_loss:.2f}")
@@ -513,66 +501,132 @@ if app_mode == "📊 Tržní skener & Vzorce":
                         col_rr.error(f"**Risk/Reward (R:R):**\n1 : {risk_reward_ratio:.2f} ⚠️")
 
                     st.markdown("---")
-                    st.markdown("#### 💰 Kalkulačka velikosti pozice (bez páky)")
+                    st.markdown("#### 💰 Kalkulačka velikosti pozice")
                     col_cap1, col_cap2 = st.columns(2)
                     with col_cap1:
                         user_capital = st.number_input(f"Celkový kapitál ($) pro {ticker}:", value=5000.0, step=500.0, key=f"cap_{ticker}")
                     with col_cap2:
-                        risk_pct = st.slider(f"Riziko na obchod (% kapitálu):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
+                        risk_pct = st.slider(f"Riziko na obchod (%):", 0.5, 3.0, 1.0, key=f"risk_{ticker}")
 
                     allowed_risk_usd = user_capital * (risk_pct / 100.0)
                     risk_per_share = 1.5 * atr_val
                     shares_to_buy = int(allowed_risk_usd / risk_per_share) if risk_per_share > 0 else 0
                     total_position_value = shares_to_buy * actual_price
-
                     if total_position_value > user_capital:
                         shares_to_buy = int(user_capital / actual_price)
                         total_position_value = shares_to_buy * actual_price
-                        st.warning("⚠️ Úvodní výpočet překročil dostupnou hotovost. Upraveno na maximální možný počet kusů.")
 
-                    st.info(f"👉 **Provedení:** Koupit **{shares_to_buy} ks** | **Celková hodnota:** `${total_position_value:.2f}` | **Max. riziko:** `${allowed_risk_usd:.2f}`")
+                    st.info(f"👉 **Provedení:** Koupit **{shares_to_buy} ks** | **Hodnota:** `${total_position_value:.2f}` | **Max. riziko:** `${allowed_risk_usd:.2f}`")
 
-                    st.markdown("---")
-                    st.markdown("#### 📰 Přehled nejnovějších zpráv")
-                    st.write(f"**Sentiment:** {news_sentiment}")
-                    if headlines_list:
-                        for h in headlines_list[:3]:
-                            st.markdown(f"- *{h}*")
-                    else:
-                        st.write("Žádné zprávy k zobrazení.")
-                    
                     if earnings_days != 999 and earnings_days <= 7:
-                        st.error(f"⚠️ **VÝSLEDKY ZA {earnings_days} DNŮ:** ({earnings_date_str}). Vysoké riziko mezer v grafu (gap risk)!")
+                        st.error(f"⚠️ **VÝSLEDKY ZA {earnings_days} DNŮ:** ({earnings_date_str}). Riziko mezery v grafu!")
 
                     fig, ax = plt.subplots(figsize=(10, 4))
                     model.plot(forecast, ax=ax)
-                    ax.set_title(f"20denní cenová předpověď: {ticker}")
+                    ax.set_title(f"20denní cenová předpověď: {ticker} (Zapsáno do DB)")
                     st.pyplot(fig)
 
         if analyzed_count == 0 or not valid_results:
-            st.warning("⚠️ Žádná aktiva neodpovídají vašim aktuálním vzorcům a kritériím filtrů.")
+            st.warning("⚠️ Žádná aktiva neodpovídají zvoleným filtrům.")
+
+elif app_mode == "🧠 Historie predikcí & Učení AI":
+    st.subheader("🧠 Vyhodnocení predikcí a učení se z minulosti")
+    st.markdown("Tato sekce stahuje zapsané predikce z databáze Supabase, porovnává je s aktuální reálnou cenou a ukazuje úspěšnost AI modelů.")
+    
+    if supabase is not None:
+        if st.button("🔄 Načíst a vyhodnotit predikce z databáze", type="primary"):
+            with st.spinner("Stahuji predikce a ověřuji reálné ceny přes Yahoo Finance..."):
+                try:
+                    response = supabase.table("predictions").select("*").execute()
+                    rows = response.data
+                    
+                    if not rows:
+                    	st.info("V databázi zatím nejsou uloženy žádné predikce. Spustťe nejdřív sken v záložce Tržní skener.")
+                    else:
+                        eval_data = []
+                        for row in rows:
+                            pred_id = row["id"]
+                            ticker = row["ticker"]
+                            entry_price = float(row["entry_price"])
+                            predicted_price = float(row["predicted_price"])
+                            target_date = row["target_date"]
+                            status = row["status"]
+                            
+                            # Zjistíme aktuální cenu trhu pro porovnání
+                            try:
+                                cur_t = yf.Ticker(ticker)
+                                hist = cur_t.history(period="1d")
+                                if not hist.empty:
+                                    if isinstance(hist.columns, pd.MultiIndex):
+                                        hist.columns = hist.columns.get_level_values(0)
+                                    current_real_price = float(hist['Close'].iloc[-1])
+                                else:
+                                    current_real_price = entry_price
+                            except:
+                                current_real_price = entry_price
+
+                            # Určíme, zda již vypršel časový horizont
+                            today_date_obj = datetime.now().date()
+                            target_date_obj = datetime.strptime(target_date, '%Y-%m-%d').date()
+                            
+                            calculated_status = status
+                            error_pct = 0.0
+                            
+                            if today_date_obj >= target_date_obj:
+                                # Horizont dosažen - vyhodnotíme úspěšnost
+                                price_diff = current_real_price - predicted_price
+                                error_pct = (abs(price_diff) / current_real_price) * 100
+                                
+                                # Pokud se směr trefil (např. předpověď rostla a cena šla nahoru)
+                                expected_dir = predicted_price > entry_price
+                                actual_dir = current_real_price > entry_price
+                                
+                                if expected_dir == actual_dir:
+                                    calculated_status = "SUCCESS 🟢"
+                                else:
+                                    calculated_status = "FAILED 🔴"
+                                    
+                                # Aktualizujeme stav v Supabase
+                                try:
+                                    supabase.table("predictions").update({
+                                        "actual_price_at_target": current_real_price,
+                                        "status": calculated_status
+                                    }).eq("id", pred_id).execute()
+                                except:
+                                    pass
+                            else:
+                                calculated_status = "PENDING ⏳ (Probíhá)"
+
+                            eval_data.append({
+                                "Ticker": ticker,
+                                "Vstup ($)": f"${entry_price:.2f}",
+                                "Cíl ($)": f"${predicted_price:.2f}",
+                                "Cílové datum": target_date,
+                                "Aktuální/Reálná ($)": f"${current_real_price:.2f}",
+                                "Stav": calculated_status
+                            })
+                        
+                        df_eval = pd.DataFrame(eval_data)
+                        st.dataframe(df_eval, use_container_width=True)
+                except Exception as db_ex:
+                    st.error(f"Chyba při komunikaci s databází: {db_ex}")
+        else:
+            st.info("Stiskněte tlačítko výše pro aktualizaci a porovnání stavu predikcí oproti aktuálním tržním cenám.")
+    else:
+        st.warning("⚠️ Databáze Supabase není připojena. Nelze načítat historii predikcí.")
 
 elif app_mode == "🤖 Klondike Agent Hub":
     st.subheader("🤖 Klondike Spot Agent Hub")
-    st.markdown("Sledování automatizovaných detektorů ranních impulzů, pre-market anomálií a objemových průrazů.")
+    st.markdown("Sledování automatizovaných detektorů ranních impulzů a zápisů do databáze.")
     agent = KlondikeExecutionAgent()
     st.success(f"**Stav agenta:** {agent.status}")
     for proto in agent.protocols:
         st.markdown(f"- ✅ `{proto}`")
 
 elif app_mode == "📘 Uživatelská příručka":
-    st.subheader("📘 Uživatelská příručka & Průvodce strategiemi")
-    st.markdown("Vítejte v uživatelské příručce aplikace **Klondike Spot Swing Skener**.")
-    
-    st.markdown("---")
-    st.markdown("### 🎯 Risk/Reward (R:R) poměr")
+    st.subheader("📘 Uživatelská příručka & Systém učení AI")
     st.markdown("""
-    * **Automatický výpočet R:R:** Každý signál počítá poměr mezi vzdáleností cíle (Take Profit) a rizika (Stop Loss).
-    * **Barevné zvýraznění:** Hodnoty `1 : 1.5` a vyšší jsou zelené pro ideální nastavení obchodu, nižší hodnoty vás upozorní výstrahou.
+    * **Automatické ukládání predikcí:** Při každém spuštění skenu se aktuální předpověď ceny na 20 dní dopředu odešle do tabulky `predictions` v Supabase.
+    * **Učení a vyhodnocení:** V záložce **Historie predikcí & Učení AI** můžete sledovat, jak se modely trefují do reálného vývoje. Jakmile uplyne cílové datum, systém sám označí predikci jako Úspěch (SUCCESS) nebo Neúspěch (FAILED).
+    * **Udržení aktivity projektu:** Díky pravidelným zápisům do databáze se eliminuje riziko, že Supabase projekt uspí kvůli 7denní neaktivitě.
     """)
-    st.markdown("### 🌅 Pre-market grafika a detekce anomálií")
-    st.markdown("""
-    * **Vizuální progress bar:** Každá rozbalená akcie teď obsahuje vizuální grafické znázornění pre-marketu, abyste na první pohled viděli, zda se trh probouzí v plusu či mínusu.
-    * **Automatické varování na anomálie:** Pokud pre-market pohyb překročí hranici `±3.0 %`, systém vás automaticky upozorní výstražným boxem na ranní skok či propad.
-    """)
-

@@ -62,11 +62,11 @@ st.sidebar.markdown("### 🔍 Vyhledávání aktiv")
 custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):", "").upper().strip()
 
 DEFAULT_TICKERS = [
-    "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", "BRK-B", "WMT", "LLY",
-    "MU", "JPM", "ORCL", "XOM", "V", "MA", "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", 
-    "UNH", "PG", "ABBV", "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", "NKE",
-    "ASML", "TSM", "NVO", "BABA", "TM", "AZN", "SHEL", "NSRGY", "SAP", "TTE", "HSBC", "SONY", "MELI", "RIO", "BP",
-    "SPY"
+    "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", 
+    "BRK-B", "WMT", "LLY", "MU", "JPM", "ORCL", "XOM", "V", "MA", 
+    "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", "UNH", "PG", "ABBV", 
+    "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", 
+    "NKE", "BABA", "SPY"
 ]
 
 active_tickers = list(DEFAULT_TICKERS)

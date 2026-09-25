@@ -220,7 +220,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 pred_price_20d = float(forecast['yhat'].iloc[-1])
                 target_date_val = (datetime.now() + timedelta(days=PRED_DAYS)).strftime('%Y-%m-%d')
 
-                # ZÁPIS DO SUPABASE S LADĚNÍM CHYB
+                # ZÁPIS DO SUPABASE
                 if supabase is not None:
                     try:
                         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -275,11 +275,17 @@ elif app_mode == "🎯 Historie predikcí & Učení AI":
 
                         for row in rows:
                             pred_id = row["id"]
-                            ticker = row["ticker"]
-                            entry_price = float(row["entry_price"])
-                            predicted_price = float(row["predicted_price"])
-                            target_date = row["target_date"]
-                            status = row["status"]
+                            ticker = row.get("ticker", "N/A")
+                            
+                            # Bezpečné ošetření, pokud je v DB hodnota None
+                            raw_entry = row.get("entry_price")
+                            entry_price = float(raw_entry) if raw_entry is not None else 0.0
+
+                            raw_pred = row.get("predicted_price")
+                            predicted_price = float(raw_pred) if raw_pred is not None else 0.0
+
+                            target_date = row.get("target_date", datetime.now().strftime('%Y-%m-%d'))
+                            status = row.get("status", "PENDING")
                             
                             try:
                                 hist = yf.Ticker(ticker).history(period="1d")
@@ -288,9 +294,12 @@ elif app_mode == "🎯 Historie predikcí & Učení AI":
                                 cur_price = entry_price
 
                             today_obj = datetime.now().date()
-                            target_obj = datetime.strptime(target_date, '%Y-%m-%d').date()
+                            try:
+                                target_obj = datetime.strptime(target_date, '%Y-%m-%d').date()
+                            except:
+                                target_obj = today_obj
                             
-                            if today_obj >= target_obj:
+                            if today_obj >= target_obj and entry_price > 0:
                                 if (predicted_price > entry_price) == (cur_price > entry_price):
                                     calculated_status = "SUCCESS 🟢"
                                     success_count += 1

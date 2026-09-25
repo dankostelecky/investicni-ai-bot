@@ -51,8 +51,8 @@ st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržn�
 # Inicializace Supabase databáze
 supabase = None
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    SUPABASE_URL = st.secrets["gjwvtvqpqfvsljeqbwam"]
+    SUPABASE_KEY = st.secrets["sb_secret_pYJeiRquyTu8MRBTlWE1_A_OTraRv9w"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.sidebar.warning("⚠️ Databáze nepřipojena (zkontrolujte st.secrets)")

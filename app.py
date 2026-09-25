@@ -20,7 +20,7 @@ st.markdown("""
     .stExpander {
         background-color: #111827 !important;
         border: 1px solid #1f2937 !important;
-        border-radius: 12 !important;
+        border-radius: 12px !important;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
         margin-bottom: 1rem;
     }
@@ -36,7 +36,7 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 1.5rem !important; font-weight: 700 !important; color: #f9fafb !important; }
     h1, h2, h3 { letter-spacing: -0.5px; color: #f9fafb; }
     </style>
-""", unsafe_layout=True)
+""", unsafe_allow_html=True)
 
 class KlondikeExecutionAgent:
     def __init__(self):
@@ -226,7 +226,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
                         today_str = datetime.now().strftime('%Y-%m-%d')
                         existing = supabase.table("predictions").select("id").eq("ticker", ticker).gte("created_at", today_str).execute()
                         if not existing.data:
-                            res_db = supabase.table("predictions").insert({
+                            supabase.table("predictions").insert({
                                 "ticker": ticker,
                                 "entry_price": float(actual_price),
                                 "predicted_price": float(pred_price_20d),

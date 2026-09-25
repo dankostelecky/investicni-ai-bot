@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 
-# --- PŮVODNÍ VIZUÁLNÍ KONFIGURACE (SVĚTLÝ DESIGN) ---
+# --- VIZUÁLNÍ KONFIGURACE A JEDNODUCHÁ GRAFIKA ---
 st.set_page_config(
     page_title="Klondike Spot Swing Skener", 
     page_icon="📈", 
@@ -42,11 +42,11 @@ st.markdown("""
 
 class KlondikeExecutionAgent:
     def __init__(self):
-        self.status = "Aktivní a připraveno (včetně zápisu predikcí do DB)"
-        self.protocols = ["Sledování spotového trendu", "Analýza pre-market impulzů", "Zápis a vyhodnocení AI predikcí"]
+        self.status = "🟢 Aktivní a připraveno (včetně zápisu predikcí do DB)"
+        self.protocols = ["📊 Sledování spotového trendu", "⚡ Analýza pre-market impulzů", "🧠 Zápis a vyhodnocení AI predikcí"]
 
 st.title("📈 AI Spot Swing Skener & Predikční Modul")
-st.markdown("<p style='font-size: 1.1em; color: #555555;'>Profesionální tržní analytika s AI vhledy, sledováním pre-marketu a učením se z historických predikcí.</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-size: 1.1em; color: #555555;'>💡 Profesionální tržní analytika s AI vhledy, sledováním pre-marketu a učením se z historických predikcí.</p>", unsafe_allow_html=True)
 
 # Inicializace Supabase databáze
 supabase = None
@@ -72,12 +72,12 @@ DEFAULT_TICKERS = [
 active_tickers = list(DEFAULT_TICKERS)
 if custom_ticker_input and custom_ticker_input not in active_tickers:
     active_tickers.insert(0, custom_ticker_input)
-    st.sidebar.success(f"Přidáno: {custom_ticker_input} do skeneru!")
+    st.sidebar.success(f"✅ Přidáno: {custom_ticker_input} do skeneru!")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Filtry a strategie")
 
-filter_high_gain = st.sidebar.toggle("💵 Zisk / 1 $>= 0.06$", value=False)
+filter_high_gain = st.sidebar.toggle("💵 Zisk / 1 $ >= 0.06$", value=False)
 filter_breakout = st.sidebar.toggle("🚀 Pouze aktivní průrazy", value=False)
 filter_squeeze = st.sidebar.toggle("📦 Pouze konsolidace (BB Squeeze)", value=False)
 filter_volume = st.sidebar.toggle("📊 Pouze s potvrzeným objemem", value=False)
@@ -155,7 +155,7 @@ def get_premarket_data(ticker_obj):
 
 def evaluate_premarket_anomaly(pre_change):
     if pre_change is None:
-        return "Pre-market data nejsou k dispozici (mimo obchodní hodiny nebo víkend)."
+        return "ℹ️ Pre-market data nejsou k dispozici (mimo obchodní hodiny nebo víkend)."
     
     if pre_change >= 3.0:
         return f"🚨 **VÝRAZNÝ BÝČÍ PRE-MARKET SKOK (+{pre_change:.2f}%):** Akcie vykazuje silný ranní nákupní tlak!"
@@ -213,7 +213,7 @@ def analyze_news_sentiment(ticker_obj):
                     if kw in title_lower: score += 1
                 for kw in bearish_keywords:
                     if kw in title_lower: score -= 1
-                
+        
         if score > 0: sentiment_label = "📈 BÝČÍ"
         elif score < 0: sentiment_label = "📉 MEDVĚDÍ"
         else: sentiment_label = "➖ NEUTRÁLNÍ"
@@ -234,7 +234,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
         st.session_state.analysis_run = True
 
     if st.session_state.analysis_run:
-        with st.spinner("Zpracovává se benchmark S&P 500, pre-market anomálie, modely a ukládání do DB..."):
+        with st.spinner("⏳ Zpracovává se benchmark S&P 500, pre-market anomálie, modely a ukládání do DB..."):
             try:
                 sp500 = yf.download("^GSPC", period="1y", interval="1d", progress=False)
                 if isinstance(sp500.columns, pd.MultiIndex):
@@ -351,13 +351,13 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 trend_pct = float(np.clip(raw_trend_score, -100, 100))
 
                 if trend_pct >= 40:
-                    trend_text = f"Silný býčí trend (+{trend_pct:.1f}%)"
+                    trend_text = f"📈 Silný býčí trend (+{trend_pct:.1f}%)"
                 elif trend_pct > 0:
-                    trend_text = f"Mírný býčí trend (+{trend_pct:.1f}%)"
+                    trend_text = f"↗️ Mírný býčí trend (+{trend_pct:.1f}%)"
                 elif trend_pct <= -40:
-                    trend_text = f"Silný medvědí trend / Výprodej ({trend_pct:.1f}%)"
+                    trend_text = f"📉 Silný medvědí trend / Výprodej ({trend_pct:.1f}%)"
                 else:
-                    trend_text = f"Mírný medvědí trend ({trend_pct:.1f}%)"
+                    trend_text = f"↘️ Mírný medvědí trend ({trend_pct:.1f}%)"
 
                 if is_breakout and is_vol_spike and rsi_val < 70 and rs_vs_sp500 > 0:
                     action_rec = "🚀 SILNÝ NÁKUP (Okamžité potvrzení průrazu)"
@@ -435,9 +435,9 @@ if app_mode == "📊 Tržní skener & Vzorce":
                 model = res["model"]
                 atr_val = res["atr_val"]
 
-                pre_str = f" | Pre-market: ${pre_price:.2f} ({pre_change:+.2f}%)" if pre_price is not None else ""
+                pre_str = f" | 🌅 Pre-market: ${pre_price:.2f} ({pre_change:+.2f}%)" if pre_price is not None else ""
 
-                with st.expander(f"📌 {ticker} | Cena: ${actual_price:.2f}{pre_str} | Akce: {action_rec.split(' ')[0]} {action_rec.split(' ')[1]}"):
+                with st.expander(f"📌 **{ticker}** | 💵 Cena: **${actual_price:.2f}**{pre_str} | 🎯 Akce: **{action_rec}**"):
                     
                     st.markdown(f"### 🎯 Doporučení akce: **{action_rec}**")
                     st.markdown(f"📈 **Analýza trendu:** {trend_text}")
@@ -465,18 +465,18 @@ if app_mode == "📊 Tržní skener & Vzorce":
 
                     st.markdown("---")
                     col1, col2, col3 = st.columns(3)
-                    col1.markdown("**Cena & Momentum**")
+                    col1.markdown("**💵 Cena & Momentum**")
                     col1.metric("Závěrečná cena", f"${actual_price:.2f}")
                     if pre_price is not None:
                         col1.metric("Pre-market cena", f"${pre_price:.2f}", delta=f"{pre_change:+.2f}%")
                     col1.metric("RSI (14)", f"{rsi_val:.1f}")
                     
-                    col2.markdown("**Objem & Potenciál**")
+                    col2.markdown("**📊 Objem & Potenciál**")
                     vol_status_text = "🔥 Objemová špička" if is_vol_spike else "⚖️ Normální objem"
                     col2.metric("Poměr objemu", f"{vol_ratio:.2f}x průměru", delta=vol_status_text, delta_color="off")
                     col2.metric("Zisk / 1 $ investice", f"+${gain_per_1_usd:.2f}")
                     
-                    col3.markdown("**Benchmark & Vzorce**")
+                    col3.markdown("**⭐ Benchmark & Vzorce**")
                     rs_color = "🟢 Nadprůměrný" if rs_vs_sp500 > 0 else "🔴 Podprůměrný"
                     col3.metric("vs S&P 500 (30d)", f"{rs_vs_sp500:+.2f}%", delta=rs_color, delta_color="off")
                     col3.write(f"**Vzorec:** {pattern_label}")
@@ -516,7 +516,7 @@ if app_mode == "📊 Tržní skener & Vzorce":
 
                     fig, ax = plt.subplots(figsize=(10, 4))
                     model.plot(forecast, ax=ax)
-                    ax.set_title(f"20denní cenová předpověď: {ticker} (Zapsáno do DB)")
+                    ax.set_title(f"📈 20denní cenová předpověď: {ticker} (Zapsáno do DB)")
                     st.pyplot(fig)
 
         if analyzed_count == 0 or not valid_results:
@@ -524,29 +524,36 @@ if app_mode == "📊 Tržní skener & Vzorce":
 
 elif app_mode == "🧠 Historie predikcí & Učení AI":
     st.subheader("🧠 Vyhodnocení predikcí a učení se z minulosti")
-    st.markdown("Tato sekce stahuje zapsané predikce z databáze Supabase, porovnává je s aktuální reálnou cenou a ukazuje úspěšnost AI modelů.")
+    st.markdown("💡 Tato sekce stahuje zapsané predikce z databáze Supabase, porovnává je s aktuální reálnou cenou a ukazuje úspěšnost AI modelů.")
     
     if supabase is not None:
         if st.button("🔄 Načíst a vyhodnotit predikce z databáze", type="primary"):
-            with st.spinner("Stahuji predikce a ověřuji reálné ceny přes Yahoo Finance..."):
+            with st.spinner("⏳ Stahuji predikce a ověřuji reálné ceny přes Yahoo Finance..."):
                 try:
                     response = supabase.table("predictions").select("*").execute()
                     rows = response.data
                     
                     if not rows:
-                        st.info("V databázi zatím nejsou uloženy žádné predikce. Spustťe nejdřív sken v záložce Tržní skener.")
+                        st.info("ℹ️ V databázi zatím nejsou uloženy žádné predikce. Spustťe nejdřív sken v záložce Tržní skener.")
                     else:
                         eval_data = []
                         success_count = 0
                         total_evaluated = 0
 
                         for row in rows:
+                            # 🛡️ BEZPEČNÉ OŠETŘENÍ PROTI NoneType HODNOTÁM (ZABRAŇUJE PÁDU)
+                            raw_entry = row.get("entry_price")
+                            raw_pred = row.get("predicted_price")
+                            
+                            if raw_entry is None or raw_pred is None:
+                                continue  
+                                
                             pred_id = row["id"]
                             ticker = row["ticker"]
-                            entry_price = float(row["entry_price"])
-                            predicted_price = float(row["predicted_price"])
-                            target_date = row["target_date"]
-                            status = row["status"]
+                            entry_price = float(raw_entry)
+                            predicted_price = float(raw_pred)
+                            target_date = row.get("target_date")
+                            status = row.get("status", "PENDING")
                             
                             try:
                                 cur_t = yf.Ticker(ticker)
@@ -561,7 +568,7 @@ elif app_mode == "🧠 Historie predikcí & Učení AI":
                                 current_real_price = entry_price
 
                             today_date_obj = datetime.now().date()
-                            target_date_obj = datetime.strptime(target_date, '%Y-%m-%d').date()
+                            target_date_obj = datetime.strptime(target_date, '%Y-%m-%d').date() if target_date else today_date_obj
                             
                             calculated_status = status
                             
@@ -598,31 +605,35 @@ elif app_mode == "🧠 Historie predikcí & Učení AI":
                         if total_evaluated > 0:
                             winrate = (success_count / total_evaluated) * 100
                             col_m1, col_m2, col_m3 = st.columns(3)
-                            col_m1.metric("Vyhodnoceno predikcí", total_evaluated)
-                            col_m2.metric("Úspěšné trefy", success_count)
-                            col_m3.metric("Úspěšnost modelu (Winrate)", f"{winrate:.1f}%")
+                            col_m1.metric("📊 Vyhodnoceno predikcí", total_evaluated)
+                            col_m2.metric("✅ Úspěšné trefy", success_count)
+                            col_m3.metric("📈 Úspěšnost modelu (Winrate)", f"{winrate:.1f}%")
 
-                        df_eval = pd.DataFrame(eval_data)
-                        st.dataframe(df_eval, use_container_width=True)
+                        if eval_data:
+                            df_eval = pd.DataFrame(eval_data)
+                            st.dataframe(df_eval, use_container_width=True)
+                        else:
+                            st.info("ℹ️ Žádné platné řádky k zobrazení po kontrole dat.")
+                            
                 except Exception as db_ex:
-                    st.error(f"Chyba při komunikaci s databází: {db_ex}")
+                    st.error(f"⚠️ Chyba při komunikaci s databází: {db_ex}")
         else:
-            st.info("Stiskněte tlačítko výše pro aktualizaci a porovnání stavu predikcí oproti aktuálním tržním cenám.")
+            st.info("💡 Stiskněte tlačítko výše pro aktualizaci a porovnání stavu predikcí oproti aktuálním tržním cenám.")
     else:
         st.warning("⚠️ Databáze Supabase není připojena. Nelze načítat historii predikcí.")
 
 elif app_mode == "🤖 Klondike Agent Hub":
     st.subheader("🤖 Klondike Spot Agent Hub")
-    st.markdown("Sledování automatizovaných detektorů ranních impulzů a zápisů do databáze.")
+    st.markdown("💡 Sledování automatizovaných detektorů ranních impulzů a zápisů do databáze.")
     agent = KlondikeExecutionAgent()
     st.success(f"**Stav agenta:** {agent.status}")
     for proto in agent.protocols:
-        st.markdown(f"- ✅ `{proto}`")
+        st.markdown(f"- `{proto}`")
 
 elif app_mode == "📘 Uživatelská příručka":
     st.subheader("📘 Uživatelská příručka & Systém učení AI")
     st.markdown("""
-    * **Automatické ukládání predikcí:** Při každém spuštění skenu se aktuální předpověď ceny na 20 dní dopředu odešle do tabulky `predictions` v Supabase.
-    * **Učení a vyhodnocení:** V záložce **Historie predikcí & Učení AI** můžete sledovat, jak se modely trefují do reálného vývoje. Jakmile uplyne cílové datum, systém sám označí predikci jako Úspěch (SUCCESS) nebo Neúspěch (FAILED).
-    * **Udržení aktivity projektu:** Díky pravidelným zápisům do databáze se eliminuje riziko, že Supabase projekt uspí kvůli 7denní neaktivitě.
+    * **📈 Automatické ukládání predikcí:** Při každém spuštění skenu se aktuální předpověď ceny na 20 dní dopředu odešle do tabulky `predictions` v Supabase.
+    * **🧠 Učení a vyhodnocení:** V záložce **Historie predikcí & Učení AI** můžete sledovat, jak se modely trefují do reálného vývoje. Jakmile uplyne cílové datum, systém sám označí predikci jako Úspěch (SUCCESS) nebo Neúspěch (FAILED).
+    * **🛡️ Udržení aktivity projektu:** Díky pravidelným zápisům do databáze se eliminuje riziko, že Supabase projekt uspí kvůli 7denní neaktivitě.
     """)

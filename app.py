@@ -69,7 +69,7 @@ custom_ticker_input = st.sidebar.text_input("Přidat ticker (např. AAPL, MSFT):
 DEFAULT_TICKERS = [
     "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO", "TSLA", 
     "BRK-B", "WMT", "LLY", "MU", "JPM", "ORCL", "XOM", "V", "MA", 
-    "AMD", "NFLX", "JNJ", "COST", "HD", "CRM", "UNH", "PG", "ABBV", 
+    "AMD", "JNJ", "COST", "HD", "CRM", "UNH", "PG", "ABBV", 
     "BAC", "IBM", "DIS", "INTC", "KO", "PLTR", "UBER", "PYPL", "PFE", 
     "NKE", "BABA", "SPY"
 ]

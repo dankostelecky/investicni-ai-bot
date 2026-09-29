@@ -944,157 +944,147 @@ with tab_scan:
             mime="text/csv",
         )
 
-        st.markdown("### 🔎 Podrobnosti kandidáta a grafy")
-        st.caption("Vyberte ticker; kompletní technický detail se zobrazí přímo zde v záložce Scanner.")
-        available = [item["ticker"] for item in results]
-        detail_ticker = st.selectbox(
-            "Vyberte ticker pro podrobný graf a analýzu",
-            available,
-            key="scanner_detail_ticker",
-        )
-        item = next(item for item in results if item["ticker"] == detail_ticker)
-        name, sector = basic_info(detail_ticker)
-        pre_price, pre_change = premarket(detail_ticker)
-        st.subheader(f"{detail_ticker} — {name}")
-        st.caption(f"Sektor: {sector}")
-        if pre_price is not None:
-            st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
-        st.markdown("#### 🧭 Struktura trhu")
-        st.write(f"**{item['structure_trend']}** · {item['structure_event']}")
-        st.caption(
-            f"Poslední potvrzené swingové úrovně: maximum ${item['swing_high']:.2f} · "
-            f"minimum ${item['swing_low']:.2f}. Swingy se potvrzují až po dalších svíčkách."
-        )
+        st.markdown("### 📊 Podrobnosti jednotlivých instrumentů")
+        st.caption("Každý ticker má vlastní záložku s grafy, strukturou trhu a svými úrovněmi.")
+        instrument_tabs = st.tabs([item["ticker"] for item in results])
 
-        news = get_news_context(detail_ticker)
-        st.markdown("#### 📰 Kontext zpráv")
-        st.caption(
-            f"{news['sentiment']} (orientační skóre titulků: {news['score']:+d}). "
-            "Jde o jednoduché klíčové fráze, ne o porozumění významu článku."
-        )
-        if news["articles"]:
-            for index, article in enumerate(news["articles"]):
-                st.write(f"**{article['title']}**")
-                meta = " · ".join(part for part in [article["source"], article["published"]] if part)
-                st.caption(meta)
-                if article["summary"]:
-                    st.write(article["summary"])
-                if article["url"].startswith(("https://", "http://")):
-                    st.link_button("Otevřít článek", article["url"], key=f"news_{detail_ticker}_{index}")
-        else:
-            st.info("Pro tento ticker nejsou dostupné zprávy.")
+        for item, instrument_tab in zip(results, instrument_tabs):
+            ticker = item["ticker"]
+            with instrument_tab:
+                st.subheader(f"{ticker} · {item['signal']}")
+                st.caption(
+                    f"Cena ${item['price']:.2f} · Vstupní zóna ${item['zone_low']:.2f}–"
+                    f"${item['zone_high']:.2f} · Preferovaný vstup ${item['preferred_entry']:.2f}"
+                )
 
-        d = item["data"].tail(180)
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Candlestick(
-            x=d.index, open=d["Open"], high=d["High"],
-            low=d["Low"], close=d["Close"], name="Cena"
-        ), secondary_y=False)
-        for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"),
-                           ("EMA200", "#7c3aed")]:
-            fig.add_trace(go.Scatter(
-                x=d.index, y=d[col], name=col,
-                line={"color": color, "width": 1.2}
-            ), secondary_y=False)
-        for col, label, color in [("BB_UPPER", "BB Upper", "#94a3b8"),
-                                  ("BB_LOWER", "BB Lower", "#94a3b8")]:
-            fig.add_trace(go.Scatter(
-                x=d.index, y=d[col], name=label,
-                line={"color": color, "width": 0.8, "dash": "dot"}
-            ), secondary_y=False)
-        for value, label, dash, color in [
-            (item["preferred_entry"], "Vstup", "dot", "#16a34a"),
-            (item["stop"], "Stop", "dash", "#dc2626"),
-            (item["target1"], "TP1", "dash", "#0891b2"),
-            (item["target2"], "TP2", "dash", "#0e7490"),
-            (item["support"], "Podpora", "dot", "#64748b"),
-            (item["resistance"], "Rezistence", "dot", "#a16207"),
-        ]:
-            fig.add_hline(y=value, line_dash=dash,
-                          annotation_text=label, line_color=color)
-        fig.update_layout(
-            height=520, xaxis_rangeslider_visible=False,
-            margin={"l": 10, "r": 10, "t": 30, "b": 10},
-            legend={"orientation": "h", "y": 1.05},
-            template="plotly_white",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+                st.markdown("#### 🧭 Struktura trhu")
+                st.write(f"**{item['structure_trend']}** · {item['structure_event']}")
+                st.caption(
+                    f"Poslední potvrzené swingové úrovně: maximum ${item['swing_high']:.2f} · "
+                    f"minimum ${item['swing_low']:.2f}. Swingy se potvrzují až po dalších svíčkách."
+                )
 
-        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                             vertical_spacing=0.05, row_heights=[0.5, 0.5])
-        fig2.add_trace(go.Scatter(x=d.index, y=d["RSI14"], name="RSI",
-                                  line={"color": "#7c3aed"}), row=1, col=1)
-        fig2.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=1, col=1)
-        fig2.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=1, col=1)
-        fig2.update_yaxes(range=[0, 100], row=1, col=1)
-        fig2.add_trace(go.Bar(
-            x=d.index, y=d["MACD_HIST"], name="MACD Histogram",
-            marker_color=np.where(d["MACD_HIST"] >= 0, "#16a34a", "#dc2626")
-        ), row=2, col=1)
-        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD"], name="MACD",
-                                  line={"color": "#2563eb"}), row=2, col=1)
-        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD_SIGNAL"], name="Signál",
-                                  line={"color": "#f59e0b"}), row=2, col=1)
-        fig2.update_layout(height=360, margin={"l": 10, "r": 10, "t": 20, "b": 10},
-                           showlegend=True, template="plotly_white")
-        st.plotly_chart(fig2, use_container_width=True)
+                # Síťové doplňky se načítají jen po kliknutí v konkrétní ticker záložce.
+                if st.button("Načíst název, pre-market a zprávy", key=f"load_context_{ticker}"):
+                    st.session_state[f"context_loaded_{ticker}"] = True
+                if st.session_state.get(f"context_loaded_{ticker}", False):
+                    name, sector = basic_info(ticker)
+                    pre_price, pre_change = premarket(ticker)
+                    st.markdown(f"**{name}** · Sektor: {sector}")
+                    if pre_price is not None:
+                        st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
+                    news = get_news_context(ticker)
+                    st.markdown("#### 📰 Kontext zpráv")
+                    st.caption(
+                        f"{news['sentiment']} (orientační skóre titulků: {news['score']:+d}). "
+                        "Jde o jednoduché klíčové fráze, ne o porozumění významu článku."
+                    )
+                    if news["articles"]:
+                        for article_index, article in enumerate(news["articles"]):
+                            st.write(f"**{article['title']}**")
+                            meta = " · ".join(
+                                part for part in [article["source"], article["published"]] if part
+                            )
+                            if meta:
+                                st.caption(meta)
+                            if article["summary"]:
+                                st.write(article["summary"])
+                            if article["url"].startswith(("https://", "http://")):
+                                st.link_button(
+                                    "Otevřít článek", article["url"],
+                                    key=f"news_{ticker}_{article_index}"
+                                )
+                    else:
+                        st.info("Pro tento ticker nejsou dostupné zprávy.")
 
-        st.markdown("#### 📊 Klíčové metriky")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Quality", f"{item['quality_score']:.1f}/100")
-        k2.metric("Entry", f"{item['entry_score']:.1f}/100")
-        k3.metric("Trend", f"{item['trend_score']:.1f}/100")
-        k4.metric("Momentum", f"{item['momentum_score']:.1f}/100")
-        k5, k6, k7, k8 = st.columns(4)
-        k5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
-        k6.metric("RSI (14)", f"{item['rsi']:.1f}")
-        k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
-        k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
+                d = item["data"].tail(180)
+                st.markdown("#### 📈 Cena, klouzavé průměry a obchodní úrovně")
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+                fig.add_trace(go.Candlestick(
+                    x=d.index, open=d["Open"], high=d["High"],
+                    low=d["Low"], close=d["Close"], name="Cena"
+                ), secondary_y=False)
+                for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"),
+                                   ("EMA200", "#7c3aed")]:
+                    fig.add_trace(go.Scatter(
+                        x=d.index, y=d[col], name=col,
+                        line={"color": color, "width": 1.2}
+                    ), secondary_y=False)
+                for col, label in [("BB_UPPER", "BB Upper"), ("BB_LOWER", "BB Lower")]:
+                    fig.add_trace(go.Scatter(
+                        x=d.index, y=d[col], name=label,
+                        line={"color": "#94a3b8", "width": 0.8, "dash": "dot"}
+                    ), secondary_y=False)
+                for value, label, dash, color in [
+                    (item["preferred_entry"], "Vstup", "dot", "#16a34a"),
+                    (item["stop"], "Stop", "dash", "#dc2626"),
+                    (item["target1"], "TP1", "dash", "#0891b2"),
+                    (item["target2"], "TP2", "dash", "#0e7490"),
+                    (item["support"], "Podpora", "dot", "#64748b"),
+                    (item["resistance"], "Rezistence", "dot", "#a16207"),
+                ]:
+                    fig.add_hline(y=value, line_dash=dash,
+                                  annotation_text=label, line_color=color)
+                fig.update_layout(
+                    height=520, xaxis_rangeslider_visible=False,
+                    margin={"l": 10, "r": 10, "t": 30, "b": 10},
+                    legend={"orientation": "h", "y": 1.05},
+                    template="plotly_white",
+                )
+                st.plotly_chart(fig, use_container_width=True, key=f"price_chart_{ticker}")
 
-        shares, value, _, per_share = position_size(
-            capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
-        )
-        p1, p2, p3, p4 = st.columns(4)
-        p1.metric("Počet akcií", shares)
-        p2.metric("Hodnota pozice", f"${value:,.2f}")
-        p3.metric("Riziko na akcii", f"${per_share:,.2f}")
-        p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
-        st.caption("Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. Nejde o investiční doporučení.")
+                st.markdown("#### 📉 RSI a MACD")
+                fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                     vertical_spacing=0.05, row_heights=[0.5, 0.5])
+                fig2.add_trace(go.Scatter(
+                    x=d.index, y=d["RSI14"], name="RSI",
+                    line={"color": "#7c3aed"}
+                ), row=1, col=1)
+                fig2.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=1, col=1)
+                fig2.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=1, col=1)
+                fig2.update_yaxes(range=[0, 100], row=1, col=1)
+                fig2.add_trace(go.Bar(
+                    x=d.index, y=d["MACD_HIST"], name="MACD histogram",
+                    marker_color=np.where(d["MACD_HIST"] >= 0, "#16a34a", "#dc2626")
+                ), row=2, col=1)
+                fig2.add_trace(go.Scatter(
+                    x=d.index, y=d["MACD"], name="MACD",
+                    line={"color": "#2563eb"}
+                ), row=2, col=1)
+                fig2.add_trace(go.Scatter(
+                    x=d.index, y=d["MACD_SIGNAL"], name="Signál",
+                    line={"color": "#f59e0b"}
+                ), row=2, col=1)
+                fig2.update_layout(
+                    height=360, margin={"l": 10, "r": 10, "t": 20, "b": 10},
+                    showlegend=True, template="plotly_white"
+                )
+                st.plotly_chart(fig2, use_container_width=True, key=f"indicators_chart_{ticker}")
 
+                st.markdown("#### 📊 Klíčové metriky")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Quality", f"{item['quality_score']:.1f}/100")
+                k2.metric("Entry", f"{item['entry_score']:.1f}/100")
+                k3.metric("Trend", f"{item['trend_score']:.1f}/100")
+                k4.metric("Momentum", f"{item['momentum_score']:.1f}/100")
+                k5, k6, k7, k8 = st.columns(4)
+                k5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
+                k6.metric("RSI (14)", f"{item['rsi']:.1f}")
+                k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
+                k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
 
-        st.markdown("### 📌 Kandidáti")
-        for r in results:
-            box_class = (
-                "buyzone"    if r["signal"] == "NÁKUPNÍ ZÓNA"
-                else "dangerzone" if r["signal"] == "VYHNOUT SE / SLABÉ"
-                else "waitzone"
-            )
-
-            with st.expander(
-                f"{r['ticker']}  |  ${r['price']:.2f}  |  {r['signal']}  |  "
-                f"Quality {r['quality_score']:.0f}  |  Entry {r['entry_score']:.0f}"
-            ):
-                st.markdown(f"""
-                <div class="{box_class}">
-                    <b>{r['ticker']} — {r['signal']}</b><br>
-                    Cena: ${r['price']:.2f} | Vstupní zóna: ${r['zone_low']:.2f}–${r['zone_high']:.2f}<br>
-                    Preferovaný vstup: ${r['preferred_entry']:.2f} | Stop: ${r['stop']:.2f}<br>
-                    Cíl 1: ${r['target1']:.2f} (R:R {r['rr1']:.2f}) | Cíl 2: ${r['target2']:.2f}
-                </div>
-                """, unsafe_allow_html=True)
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Trend", f"{r['trend_score']:.0f}/100")
-                c2.metric("Momentum", f"{r['momentum_score']:.0f}/100")
-                c3.metric("RS vs SPY (30d)", f"{r['rs_30d']:+.2f}%")
-                st.caption(f"RSI {r['rsi']:.1f} · ATR {r['atr_pct']:.2f}% · "
-                           f"Objem {r['volume_ratio']:.2f}× · R:R {r['rr1']:.2f}")
-                labels = []
-                if r["breakout"]: labels.append("cenový průraz")
-                if r["breakdown"]: labels.append("riziko propadu")
-                if r["squeeze"]: labels.append("BB squeeze")
-                if r["volume_spike"]: labels.append("zvýšený objem")
-                st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
-                st.caption(f"Struktura trhu: {r['structure_trend']} · {r['structure_event']}")
+                shares, value, _, per_share = position_size(
+                    capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
+                )
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("Počet akcií", shares)
+                p2.metric("Hodnota pozice", f"${value:,.2f}")
+                p3.metric("Riziko na akcii", f"${per_share:,.2f}")
+                p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
+                st.caption(
+                    "Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. "
+                    "Nejde o investiční doporučení."
+                )
 
 # ============================================================
 # TAB 2 – HISTORIE SIGNÁLŮ

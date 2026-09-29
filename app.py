@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Klondike Spot Scanner 4.3",
+    page_title="Spot Scanner 4.3",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -76,7 +76,7 @@ st.markdown("""
 DEFAULT_TICKERS = [
     "NVDA","AAPL","GOOGL","MSFT","AMZN","META","AVGO","TSLA","BRK-B",
     "WMT","LLY","MU","JPM","ORCL","XOM","V","MA","AMD","JNJ","COST",
-    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR","NKE",
+    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR",
     "UBER","PYPL","PFE","BABA","SPY"
 ]
 
@@ -840,7 +840,7 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h1>📈 Klondike Spot Scanner 4.3</h1>
+    <h3>📈 Spot Scanner 4.3</h3>
     <p>Technická analýza • Struktura trhu • Zprávy • Nákupní zóny • Risk management</p>
 </div>
 """, unsafe_allow_html=True)
@@ -903,7 +903,7 @@ with tab_scan:
     with col_a:
         st.subheader("Tržní sken")
     with col_b:
-        run = st.button("🚀 SPUSTIT SKEN", type="primary", use_container_width=True)
+        run = st.button("🚀 SPUSTIT SKEN PŘEDNASTAVENÝCH", type="primary", use_container_width=True)
 
     if run:
         progress_bar = st.progress(0.0, text="Analyzuji trh…")

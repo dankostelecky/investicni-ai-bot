@@ -1,5 +1,5 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 4.0 — sjednocená verze
+# KLONDIKE SPOT SCANNER 4.1 — sjednocená a revidovaná verze
 # Spot swing decision-support scanner s feedback loopem
 # ============================================================
 
@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Klondike Spot Scanner 4.0",
+    page_title="Klondike Spot Scanner 4.1",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -36,9 +36,9 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp, [data-testid="stAppViewContainer"] { background: #f5f7fb; color: #111827; }
-    [data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: #ffffff; }
-    [data-testid="stSidebar"] * { color: #111827; }
-    header[data-testid="stHeader"] { background: rgba(255,255,255,.95); }
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: #ffffff !important; }
+    [data-testid="stSidebar"] * { color: #111827 !important; }
+    header[data-testid="stHeader"] { background: rgba(255,255,255,.96); }
     .hero {
         padding: 1.4rem 1.6rem;
         border: 1px solid #dbeafe;
@@ -50,6 +50,8 @@ st.markdown("""
     }
     .hero h1 { margin: 0; font-size: 2rem; color: #111827; }
     .hero p { margin: .4rem 0 0; color: #4b5563; }
+    div[data-testid="stExpander"] { background: #ffffff; border-radius: 12px; }
+    div[data-testid="stMetric"] { background: #ffffff; }
     .buyzone {
         background: linear-gradient(135deg,#ecfdf5,#f0fdf4);
         border: 1px solid #86efac; border-radius: 15px; padding: 1rem;
@@ -106,9 +108,14 @@ def download_history(ticker: str, period: str = "1y", interval: str = "1d") -> p
             )
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            if "Close" not in df.columns:
+            required = {"Open", "High", "Low", "Close", "Volume"}
+            if not required.issubset(df.columns):
+                log.warning("download_history(%s): chybí sloupce %s", ticker,
+                            sorted(required - set(df.columns)))
                 return pd.DataFrame()
-            return df.dropna(subset=["Close"]).copy()
+            df = df.replace([np.inf, -np.inf], np.nan)
+            df = df.dropna(subset=["Open", "High", "Low", "Close"])
+            return df[df["Close"] > 0].copy()
         except Exception as e:
             log.warning(f"download_history({ticker}) pokus {attempt+1} selhal: {e}")
             time.sleep(0.5 * (attempt + 1))
@@ -144,8 +151,10 @@ def premarket(ticker: str):
             info = obj.info
             pre = info.get("preMarketPrice")
             prev = info.get("previousClose")
-        if pre is not None and prev:
-            return float(pre), (float(pre) / float(prev) - 1) * 100
+        pre = safe_float(pre, None)
+        prev = safe_float(prev, None)
+        if pre is not None and prev is not None and pre > 0 and prev > 0:
+            return pre, (pre / prev - 1) * 100
     except Exception:
         pass
     return None, None
@@ -200,7 +209,7 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def detect_patterns(d: pd.DataFrame) -> dict:
-    """Vzorce z druhého skeneru: průraz, propad, squeeze a potvrzení objemem."""
+    """Určí průraz, propad, Bollinger squeeze a neobvykle vysoký objem."""
     close = d["Close"]
     high20 = close.rolling(20).max()
     low20 = close.rolling(20).min()
@@ -353,7 +362,8 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict) -> dict:
     conservative  = max(preferred - 0.8 * atr, price - 2.5 * atr)
 
     zone_low  = max(0.01, preferred - 0.35 * atr)
-    zone_high = min(price, preferred + 0.35 * atr)
+    zone_high = max(zone_low, preferred + 0.35 * atr)
+    in_zone = zone_low <= price <= zone_high
 
     structural_stop = support - 0.25 * atr
     atr_stop        = preferred - 1.5 * atr
@@ -370,10 +380,15 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict) -> dict:
     rr1 = (target1 - preferred) / risk_per_share if risk_per_share > 0 else 0
     rr2 = (target2 - preferred) / risk_per_share if risk_per_share > 0 else 0
 
-    distance_to_zone = (price - zone_high) / price * 100 if price else 999
+    if price > zone_high:
+        distance_to_zone = (price - zone_high) / price * 100 if price else 999
+    elif price < zone_low:
+        distance_to_zone = (price - zone_low) / price * 100 if price else -999
+    else:
+        distance_to_zone = 0.0
 
     entry_score = 50
-    if price <= zone_high:               entry_score += 20
+    if in_zone:                          entry_score += 20
     if price <= float(x["EMA20"]):       entry_score += 10
     if 45 <= safe_float(x["RSI14"], 50) <= 65: entry_score += 10
     if scores["rs_30d"] > 0:             entry_score += 10
@@ -381,7 +396,7 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict) -> dict:
     if safe_float(x["RSI14"], 50) > 75:  entry_score -= 20
     entry_score = float(np.clip(entry_score, 0, 100))
 
-    if price <= zone_high and entry_score >= 65 and scores["quality_score"] >= 55:
+    if in_zone and entry_score >= 65 and scores["quality_score"] >= 55:
         signal = "NÁKUPNÍ ZÓNA"
     elif price > zone_high and scores["quality_score"] >= 70:
         signal = "ČEKAT NA KOREKCI"
@@ -445,7 +460,7 @@ def get_supabase():
 def build_signal_payload(r: dict) -> dict:
     return {
         "ticker":           r["ticker"],
-        "signal_date":      datetime.now(timezone.utc).date().isoformat(),
+        "signal_date":      pd.Timestamp(r["data"].index[-1]).date().isoformat(),
         "price":            r["price"],
         "quality_score":    r["quality_score"],
         "entry_score":      r["entry_score"],
@@ -534,27 +549,46 @@ def load_learning_stats(sb, days: int = 90):
                 continue
 
             window = s.iloc[start_idx + 1:start_idx + 21]
-            if window.empty:
+            if len(window) < 20:
                 fwd_outcomes[i] = "pending"
                 continue
+            if entry <= 0 or stop <= 0 or tp1 <= entry or stop >= entry:
+                continue
 
-            outcome = "OPEN"
-            for day_idx in range(start_idx + 1, min(start_idx + 21, len(s))):
+            outcome = "NOT_FILLED"
+            filled = False
+            for day_idx in range(start_idx + 1, start_idx + 21):
                 day = s.iloc[day_idx]
+                hit_entry = float(day["Low"]) <= entry
                 hit_tp = float(day["High"]) >= tp1
                 hit_sl = float(day["Low"]) <= stop
+
+                if not filled:
+                    if not hit_entry:
+                        continue
+                    filled = True
+                    # Denní OHLC neukáže, zda byl limitní vstup před cílem.
+                    if hit_tp or hit_sl:
+                        outcome = "AMBIGUOUS"
+                        break
+                    outcome = "OPEN"
+                    continue
+
                 if hit_tp and hit_sl:
                     outcome = "AMBIGUOUS"
                     break
                 if hit_tp:
                     outcome = "TP1"
+                    fwd_returns[i] = round((tp1 / entry - 1) * 100, 2)
                     break
                 if hit_sl:
                     outcome = "SL"
+                    fwd_returns[i] = round((stop / entry - 1) * 100, 2)
                     break
 
-            final_ret = (float(window["Close"].iloc[-1]) / entry - 1) * 100
-            fwd_returns[i] = round(final_ret, 2)
+            if filled and outcome == "OPEN":
+                final_ret = (float(window["Close"].iloc[-1]) / entry - 1) * 100
+                fwd_returns[i] = round(final_ret, 2)
             fwd_outcomes[i] = outcome
 
         df["forward_return_20d"] = fwd_returns
@@ -630,7 +664,7 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h1>📈 Klondike Spot Scanner 4.0</h1>
+    <h1>📈 Klondike Spot Scanner 4.1</h1>
     <p>Technická analýza • Nákupní zóny • Risk management • Učící se historie signálů</p>
 </div>
 """, unsafe_allow_html=True)
@@ -678,8 +712,6 @@ tab_scan, tab_history, tab_learning = st.tabs([
 
 if "results" not in st.session_state:
     st.session_state.results = []
-if "selected_ticker" not in st.session_state:
-    st.session_state.selected_ticker = None
 if "regime" not in st.session_state:
     st.session_state.regime = None
 if "regime_score" not in st.session_state:
@@ -811,156 +843,84 @@ with tab_scan:
                 if r["squeeze"]: labels.append("BB squeeze")
                 if r["volume_spike"]: labels.append("zvýšený objem")
                 st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
-                st.markdown("#### 📈 Cenový graf a úrovně")
-                detail_data = r["data"].tail(180)
-                detail_fig = go.Figure()
-                detail_fig.add_trace(go.Candlestick(
-                    x=detail_data.index, open=detail_data["Open"],
-                    high=detail_data["High"], low=detail_data["Low"],
-                    close=detail_data["Close"], name="Cena"
-                ))
-                for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"),
-                                   ("EMA200", "#7c3aed")]:
-                    detail_fig.add_trace(go.Scatter(
-                        x=detail_data.index, y=detail_data[col], name=col,
-                        line={"color": color, "width": 1.2}
-                    ))
-                for value, label, color in [
-                    (r["preferred_entry"], "Vstup", "#16a34a"),
-                    (r["stop"], "Stop", "#dc2626"),
-                    (r["target1"], "TP1", "#0891b2"),
-                    (r["target2"], "TP2", "#0e7490"),
-                ]:
-                    detail_fig.add_hline(y=value, line_dash="dash",
-                                         annotation_text=label, line_color=color)
-                detail_fig.update_layout(
-                    height=420, xaxis_rangeslider_visible=False,
-                    margin={"l": 10, "r": 10, "t": 30, "b": 10},
-                    legend={"orientation": "h", "y": 1.05},
-                    template="plotly_white",
-                )
-                st.plotly_chart(detail_fig, use_container_width=True,
-                                key=f"candidate_chart_{r['ticker']}")
-                pos_shares, pos_value, _, pos_risk = position_size(
-                    capital, risk_pct, r["preferred_entry"], r["stop"], max_position_pct
-                )
-                p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Počet akcií", pos_shares)
-                p2.metric("Hodnota pozice", f"${pos_value:,.2f}")
-                p3.metric("Riziko na akcii", f"${pos_risk:,.2f}")
-                p4.metric("Max. riziko", f"${pos_shares * pos_risk:,.2f}")
-                st.caption("Analytická pomůcka; nezahrnuje poplatky, skluz ani cenové gapy.")
 
-# ============================================================
-# TAB 2 – HISTORIE SIGNÁLŮ
-# ============================================================
-    available = [r["ticker"] for r in st.session_state.results]
-    if not available:
-        st.info("Nejdříve spusťte sken; detail pak nabídne analyzované tickery.")
-    else:
-        default = st.session_state.selected_ticker
-        index = available.index(default) if default in available else 0
-        ticker = st.selectbox("Ticker", available, index=index, key="detail_ticker")
-        item = next(r for r in st.session_state.results if r["ticker"] == ticker)
-
-        # Lazy metadata
-        name, sector = basic_info(ticker)
-        pre_price, pre_change = premarket(ticker)
-
-        st.subheader(f"{ticker} — {name}")
+        st.markdown("### 🔎 Podrobnosti kandidáta")
+        available = [item["ticker"] for item in results]
+        detail_ticker = st.selectbox(
+            "Vyberte ticker pro podrobný graf a analýzu",
+            available,
+            key="scanner_detail_ticker",
+        )
+        item = next(item for item in results if item["ticker"] == detail_ticker)
+        name, sector = basic_info(detail_ticker)
+        pre_price, pre_change = premarket(detail_ticker)
+        st.subheader(f"{detail_ticker} — {name}")
         st.caption(f"Sektor: {sector}")
         if pre_price is not None:
             st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
 
         d = item["data"].tail(180)
         fig = make_subplots(specs=[[{"secondary_y": True}]])
-
         fig.add_trace(go.Candlestick(
             x=d.index, open=d["Open"], high=d["High"],
             low=d["Low"], close=d["Close"], name="Cena"
         ), secondary_y=False)
-
-        for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"), ("EMA200", "#7c3aed")]:
+        for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"),
+                           ("EMA200", "#7c3aed")]:
             fig.add_trace(go.Scatter(
                 x=d.index, y=d[col], name=col,
                 line={"color": color, "width": 1.2}
             ), secondary_y=False)
-
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["BB_UPPER"], name="BB Upper",
-            line={"color": "#94a3b8", "width": 0.8, "dash": "dot"}
-        ), secondary_y=False)
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["BB_LOWER"], name="BB Lower",
-            line={"color": "#94a3b8", "width": 0.8, "dash": "dot"},
-            fill="tonexty", fillcolor="rgba(148,163,184,0.08)"
-        ), secondary_y=False)
-
-        fig.add_hline(y=item["preferred_entry"], line_dash="dot",
-                      annotation_text="Vstup", line_color="#16a34a")
-        fig.add_hline(y=item["stop"], line_dash="dash",
-                      annotation_text="Stop", line_color="#dc2626")
-        fig.add_hline(y=item["target1"], line_dash="dash",
-                      annotation_text="TP1", line_color="#0891b2")
-        fig.add_hline(y=item["target2"], line_dash="dash",
-                      annotation_text="TP2", line_color="#0e7490")
-
+        for col, label, color in [("BB_UPPER", "BB Upper", "#94a3b8"),
+                                  ("BB_LOWER", "BB Lower", "#94a3b8")]:
+            fig.add_trace(go.Scatter(
+                x=d.index, y=d[col], name=label,
+                line={"color": color, "width": 0.8, "dash": "dot"}
+            ), secondary_y=False)
+        for value, label, dash, color in [
+            (item["preferred_entry"], "Vstup", "dot", "#16a34a"),
+            (item["stop"], "Stop", "dash", "#dc2626"),
+            (item["target1"], "TP1", "dash", "#0891b2"),
+            (item["target2"], "TP2", "dash", "#0e7490"),
+        ]:
+            fig.add_hline(y=value, line_dash=dash,
+                          annotation_text=label, line_color=color)
         fig.update_layout(
-            height=600, xaxis_rangeslider_visible=False,
+            height=520, xaxis_rangeslider_visible=False,
             margin={"l": 10, "r": 10, "t": 30, "b": 10},
             legend={"orientation": "h", "y": 1.05},
+            template="plotly_white",
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # RSI + MACD
         fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                             vertical_spacing=0.05,
-                             row_heights=[0.5, 0.5])
+                             vertical_spacing=0.05, row_heights=[0.5, 0.5])
         fig2.add_trace(go.Scatter(x=d.index, y=d["RSI14"], name="RSI",
                                   line={"color": "#7c3aed"}), row=1, col=1)
         fig2.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=1, col=1)
         fig2.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=1, col=1)
         fig2.update_yaxes(range=[0, 100], row=1, col=1)
-
-        fig2.add_trace(go.Bar(x=d.index, y=d["MACD_HIST"], name="MACD Hist",
-                              marker_color=np.where(d["MACD_HIST"] >= 0, "#16a34a", "#dc2626")),
-                       row=2, col=1)
+        fig2.add_trace(go.Bar(
+            x=d.index, y=d["MACD_HIST"], name="MACD Histogram",
+            marker_color=np.where(d["MACD_HIST"] >= 0, "#16a34a", "#dc2626")
+        ), row=2, col=1)
         fig2.add_trace(go.Scatter(x=d.index, y=d["MACD"], name="MACD",
                                   line={"color": "#2563eb"}), row=2, col=1)
-        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD_SIGNAL"], name="Signal",
+        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD_SIGNAL"], name="Signál",
                                   line={"color": "#f59e0b"}), row=2, col=1)
-
-        fig2.update_layout(height=400, margin={"l": 10, "r": 10, "t": 20, "b": 10},
-                           showlegend=True)
+        fig2.update_layout(height=360, margin={"l": 10, "r": 10, "t": 20, "b": 10},
+                           showlegend=True, template="plotly_white")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Pozicování
-        st.markdown("### 💰 Pozicování")
-        shares, value, max_risk, per_share = position_size(
+        shares, value, _, per_share = position_size(
             capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
         )
-        a, b, c, dcol = st.columns(4)
-        a.metric("Počet akcií", shares)
-        b.metric("Hodnota pozice", f"${value:,.2f}")
-        c.metric("Riziko / akcie", f"${per_share:,.2f}")
-        dcol.metric("Max. riziko", f"${shares * per_share:,.2f}")
-
-        # Klíčové metriky
-        st.markdown("### 📊 Klíčové metriky")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Quality", f"{item['quality_score']:.1f}")
-        m2.metric("Entry", f"{item['entry_score']:.1f}")
-        m3.metric("Trend", f"{item['trend_score']:.1f}")
-        m4.metric("Momentum", f"{item['momentum_score']:.1f}")
-
-        m5, m6, m7, m8 = st.columns(4)
-        m5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
-        m6.metric("RSI", f"{item['rsi']:.1f}")
-        m7.metric("ATR %", f"{item['atr_pct']:.2f} %")
-        m8.metric("Objem", f"{item['volume_ratio']:.2f}×")
-
-        st.caption("Výpočet nezahrnuje poplatky, skluz, měnové riziko ani gapy. "
-                   "Nejde o investiční doporučení.")
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("Počet akcií", shares)
+        p2.metric("Hodnota pozice", f"${value:,.2f}")
+        p3.metric("Riziko na akcii", f"${per_share:,.2f}")
+        p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
+        st.caption("Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. Nejde o investiční doporučení.")
 
 # ============================================================
 # TAB 2 – HISTORIE SIGNÁLŮ
@@ -1031,13 +991,16 @@ with tab_learning:
                 amb = int(counts.get("AMBIGUOUS", 0))
                 opn = int(counts.get("OPEN", 0))
                 pend = int(counts.get("pending", 0))
-                unk = int(counts.get("unknown", 0))
+                not_filled = int(counts.get("NOT_FILLED", 0))
 
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric("TP1", tp1)
                 c2.metric("SL", sl)
                 c3.metric("Ambiguous", amb)
-                c4.metric("Open", opn)
+                c4.metric("Open po 20 dnech", opn)
+                c5.metric("Vstup nevyplněn", not_filled)
+                if pend:
+                    st.caption(f"Čeká na dokončení 20 obchodních dnů: {pend} signálů.")
 
                 resolved = tp1 + sl
                 if resolved > 0:

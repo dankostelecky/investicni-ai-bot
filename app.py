@@ -35,19 +35,21 @@ st.set_page_config(
 # ---------------------- CSS -----------------------------------
 st.markdown("""
 <style>
-    .stApp { background: #f5f7fb; }
-    [data-testid="stSidebar"] { background: #111827; }
-    [data-testid="stSidebar"] * { color: #f9fafb !important; }
+    .stApp, [data-testid="stAppViewContainer"] { background: #f5f7fb; color: #111827; }
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: #ffffff; }
+    [data-testid="stSidebar"] * { color: #111827; }
+    header[data-testid="stHeader"] { background: rgba(255,255,255,.95); }
     .hero {
         padding: 1.4rem 1.6rem;
+        border: 1px solid #dbeafe;
         border-radius: 18px;
-        background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
-        color: white;
+        background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+        color: #111827;
         margin-bottom: 1rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,.10);
+        box-shadow: 0 4px 18px rgba(15,23,42,.06);
     }
-    .hero h1 { margin: 0; font-size: 2rem; }
-    .hero p { margin: .4rem 0 0; color: #d1d5db; }
+    .hero h1 { margin: 0; font-size: 2rem; color: #111827; }
+    .hero p { margin: .4rem 0 0; color: #4b5563; }
     .buyzone {
         background: linear-gradient(135deg,#ecfdf5,#f0fdf4);
         border: 1px solid #86efac; border-radius: 15px; padding: 1rem;
@@ -670,8 +672,8 @@ with st.sidebar:
     st.caption("Analytická pomůcka – ne automatický obchodní systém.")
 
 # ---------------------- TABS --------------------------------
-tab_scan, tab_detail, tab_history, tab_learning = st.tabs([
-    "🔎 Scanner", "📊 Detail", "🗄️ Historie signálů", "🧠 Učící se přehled"
+tab_scan, tab_history, tab_learning = st.tabs([
+    "🔎 Scanner", "🗄️ Historie signálů", "🧠 Učící se přehled"
 ])
 
 if "results" not in st.session_state:
@@ -809,27 +811,8 @@ with tab_scan:
                 if r["squeeze"]: labels.append("BB squeeze")
                 if r["volume_spike"]: labels.append("zvýšený objem")
                 st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
-                if st.button("Zobrazit detail", key=f"detail_{r['ticker']}"):
-                    st.session_state.selected_ticker = r["ticker"]
-                    st.session_state.show_inline_detail = True
-
-        # Zobraz detail hned zde, aby kliknutí nemuselo hledat jinou záložku.
-        if st.session_state.get("show_inline_detail", False):
-            detail_item = next(
-                (item for item in results
-                 if item["ticker"] == st.session_state.get("selected_ticker")),
-                None,
-            )
-            if detail_item is not None:
-                st.markdown("---")
-                st.subheader(f"📊 Detail: {detail_item['ticker']}")
-                meta_name, meta_sector = basic_info(detail_item["ticker"])
-                pre_price, pre_change = premarket(detail_item["ticker"])
-                st.caption(f"{meta_name} · Sektor: {meta_sector}")
-                if pre_price is not None:
-                    st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
-
-                detail_data = detail_item["data"].tail(180)
+                st.markdown("#### 📈 Cenový graf a úrovně")
+                detail_data = r["data"].tail(180)
                 detail_fig = go.Figure()
                 detail_fig.add_trace(go.Candlestick(
                     x=detail_data.index, open=detail_data["Open"],
@@ -843,32 +826,34 @@ with tab_scan:
                         line={"color": color, "width": 1.2}
                     ))
                 for value, label, color in [
-                    (detail_item["preferred_entry"], "Vstup", "#16a34a"),
-                    (detail_item["stop"], "Stop", "#dc2626"),
-                    (detail_item["target1"], "TP1", "#0891b2"),
+                    (r["preferred_entry"], "Vstup", "#16a34a"),
+                    (r["stop"], "Stop", "#dc2626"),
+                    (r["target1"], "TP1", "#0891b2"),
+                    (r["target2"], "TP2", "#0e7490"),
                 ]:
                     detail_fig.add_hline(y=value, line_dash="dash",
                                          annotation_text=label, line_color=color)
                 detail_fig.update_layout(
-                    height=500, xaxis_rangeslider_visible=False,
+                    height=420, xaxis_rangeslider_visible=False,
                     margin={"l": 10, "r": 10, "t": 30, "b": 10},
                     legend={"orientation": "h", "y": 1.05},
+                    template="plotly_white",
                 )
                 st.plotly_chart(detail_fig, use_container_width=True,
-                                key=f"inline_detail_chart_{detail_item['ticker']}")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Quality", f"{detail_item['quality_score']:.1f}")
-                m2.metric("Entry score", f"{detail_item['entry_score']:.1f}")
-                m3.metric("RSI", f"{detail_item['rsi']:.1f}")
-                m4.metric("R:R", f"1 : {detail_item['rr1']:.2f}")
-                if st.button("Skrýt detail", key="hide_inline_detail"):
-                    st.session_state.show_inline_detail = False
-                    st.rerun()
+                                key=f"candidate_chart_{r['ticker']}")
+                pos_shares, pos_value, _, pos_risk = position_size(
+                    capital, risk_pct, r["preferred_entry"], r["stop"], max_position_pct
+                )
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("Počet akcií", pos_shares)
+                p2.metric("Hodnota pozice", f"${pos_value:,.2f}")
+                p3.metric("Riziko na akcii", f"${pos_risk:,.2f}")
+                p4.metric("Max. riziko", f"${pos_shares * pos_risk:,.2f}")
+                st.caption("Analytická pomůcka; nezahrnuje poplatky, skluz ani cenové gapy.")
 
 # ============================================================
-# TAB 2 – DETAIL
+# TAB 2 – HISTORIE SIGNÁLŮ
 # ============================================================
-with tab_detail:
     available = [r["ticker"] for r in st.session_state.results]
     if not available:
         st.info("Nejdříve spusťte sken; detail pak nabídne analyzované tickery.")
@@ -978,7 +963,7 @@ with tab_detail:
                    "Nejde o investiční doporučení.")
 
 # ============================================================
-# TAB 3 – HISTORIE SIGNÁLŮ
+# TAB 2 – HISTORIE SIGNÁLŮ
 # ============================================================
 with tab_history:
     st.subheader("Uložené signály")
@@ -1017,7 +1002,7 @@ with tab_history:
                 )
 
 # ============================================================
-# TAB 4 – UČÍCÍ SE PŘEHLED
+# TAB 3 – UČÍCÍ SE PŘEHLED
 # ============================================================
 with tab_learning:
     st.subheader("Vyhodnocení historických signálů")

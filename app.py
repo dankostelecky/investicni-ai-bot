@@ -76,7 +76,7 @@ st.markdown("""
 DEFAULT_TICKERS = [
     "NVDA","AAPL","GOOGL","MSFT","AMZN","META","AVGO","TSLA","BRK-B",
     "WMT","LLY","MU","JPM","ORCL","XOM","V","MA","AMD","JNJ","COST",
-    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR",
+    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR","NKE",
     "UBER","PYPL","PFE","BABA","SPY"
 ]
 
@@ -944,41 +944,8 @@ with tab_scan:
             mime="text/csv",
         )
 
-        st.markdown("### 📌 Kandidáti")
-        for r in results:
-            box_class = (
-                "buyzone"    if r["signal"] == "NÁKUPNÍ ZÓNA"
-                else "dangerzone" if r["signal"] == "VYHNOUT SE / SLABÉ"
-                else "waitzone"
-            )
-
-            with st.expander(
-                f"{r['ticker']}  |  ${r['price']:.2f}  |  {r['signal']}  |  "
-                f"Quality {r['quality_score']:.0f}  |  Entry {r['entry_score']:.0f}"
-            ):
-                st.markdown(f"""
-                <div class="{box_class}">
-                    <b>{r['ticker']} — {r['signal']}</b><br>
-                    Cena: ${r['price']:.2f} | Vstupní zóna: ${r['zone_low']:.2f}–${r['zone_high']:.2f}<br>
-                    Preferovaný vstup: ${r['preferred_entry']:.2f} | Stop: ${r['stop']:.2f}<br>
-                    Cíl 1: ${r['target1']:.2f} (R:R {r['rr1']:.2f}) | Cíl 2: ${r['target2']:.2f}
-                </div>
-                """, unsafe_allow_html=True)
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Trend", f"{r['trend_score']:.0f}/100")
-                c2.metric("Momentum", f"{r['momentum_score']:.0f}/100")
-                c3.metric("RS vs SPY (30d)", f"{r['rs_30d']:+.2f}%")
-                st.caption(f"RSI {r['rsi']:.1f} · ATR {r['atr_pct']:.2f}% · "
-                           f"Objem {r['volume_ratio']:.2f}× · R:R {r['rr1']:.2f}")
-                labels = []
-                if r["breakout"]: labels.append("cenový průraz")
-                if r["breakdown"]: labels.append("riziko propadu")
-                if r["squeeze"]: labels.append("BB squeeze")
-                if r["volume_spike"]: labels.append("zvýšený objem")
-                st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
-                st.caption(f"Struktura trhu: {r['structure_trend']} · {r['structure_event']}")
-
-        st.markdown("### 🔎 Podrobnosti kandidáta")
+        st.markdown("### 🔎 Podrobnosti kandidáta a grafy")
+        st.caption("Vyberte ticker; kompletní technický detail se zobrazí přímo zde v záložce Scanner.")
         available = [item["ticker"] for item in results]
         detail_ticker = st.selectbox(
             "Vyberte ticker pro podrobný graf a analýzu",
@@ -1040,6 +1007,8 @@ with tab_scan:
             (item["stop"], "Stop", "dash", "#dc2626"),
             (item["target1"], "TP1", "dash", "#0891b2"),
             (item["target2"], "TP2", "dash", "#0e7490"),
+            (item["support"], "Podpora", "dot", "#64748b"),
+            (item["resistance"], "Rezistence", "dot", "#a16207"),
         ]:
             fig.add_hline(y=value, line_dash=dash,
                           annotation_text=label, line_color=color)
@@ -1070,6 +1039,18 @@ with tab_scan:
                            showlegend=True, template="plotly_white")
         st.plotly_chart(fig2, use_container_width=True)
 
+        st.markdown("#### 📊 Klíčové metriky")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Quality", f"{item['quality_score']:.1f}/100")
+        k2.metric("Entry", f"{item['entry_score']:.1f}/100")
+        k3.metric("Trend", f"{item['trend_score']:.1f}/100")
+        k4.metric("Momentum", f"{item['momentum_score']:.1f}/100")
+        k5, k6, k7, k8 = st.columns(4)
+        k5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
+        k6.metric("RSI (14)", f"{item['rsi']:.1f}")
+        k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
+        k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
+
         shares, value, _, per_share = position_size(
             capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
         )
@@ -1079,6 +1060,41 @@ with tab_scan:
         p3.metric("Riziko na akcii", f"${per_share:,.2f}")
         p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
         st.caption("Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. Nejde o investiční doporučení.")
+
+
+        st.markdown("### 📌 Kandidáti")
+        for r in results:
+            box_class = (
+                "buyzone"    if r["signal"] == "NÁKUPNÍ ZÓNA"
+                else "dangerzone" if r["signal"] == "VYHNOUT SE / SLABÉ"
+                else "waitzone"
+            )
+
+            with st.expander(
+                f"{r['ticker']}  |  ${r['price']:.2f}  |  {r['signal']}  |  "
+                f"Quality {r['quality_score']:.0f}  |  Entry {r['entry_score']:.0f}"
+            ):
+                st.markdown(f"""
+                <div class="{box_class}">
+                    <b>{r['ticker']} — {r['signal']}</b><br>
+                    Cena: ${r['price']:.2f} | Vstupní zóna: ${r['zone_low']:.2f}–${r['zone_high']:.2f}<br>
+                    Preferovaný vstup: ${r['preferred_entry']:.2f} | Stop: ${r['stop']:.2f}<br>
+                    Cíl 1: ${r['target1']:.2f} (R:R {r['rr1']:.2f}) | Cíl 2: ${r['target2']:.2f}
+                </div>
+                """, unsafe_allow_html=True)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Trend", f"{r['trend_score']:.0f}/100")
+                c2.metric("Momentum", f"{r['momentum_score']:.0f}/100")
+                c3.metric("RS vs SPY (30d)", f"{r['rs_30d']:+.2f}%")
+                st.caption(f"RSI {r['rsi']:.1f} · ATR {r['atr_pct']:.2f}% · "
+                           f"Objem {r['volume_ratio']:.2f}× · R:R {r['rr1']:.2f}")
+                labels = []
+                if r["breakout"]: labels.append("cenový průraz")
+                if r["breakdown"]: labels.append("riziko propadu")
+                if r["squeeze"]: labels.append("BB squeeze")
+                if r["volume_spike"]: labels.append("zvýšený objem")
+                st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
+                st.caption(f"Struktura trhu: {r['structure_trend']} · {r['structure_event']}")
 
 # ============================================================
 # TAB 2 – HISTORIE SIGNÁLŮ

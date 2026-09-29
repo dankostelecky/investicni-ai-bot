@@ -73,7 +73,7 @@ DEFAULT_TICKERS = [
     "NVDA","AAPL","GOOGL","MSFT","AMZN","META","AVGO","TSLA","BRK-B",
     "WMT","LLY","MU","JPM","ORCL","XOM","V","MA","AMD","JNJ","COST",
     "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR",
-    "UBER","PYPL","PFE","NKE","BABA","SPY"
+    "UBER","PYPL","PFE","BABA","SPY"
 ]
 
 TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
@@ -735,4 +735,264 @@ with tab_scan:
                 "TP1":      round(r["target1"], 2),
                 "R:R":      round(r["rr1"], 2),
                 "RS 30d":   r["rs_30d"],
-               
+                "RSI":      round(r["rsi"], 1),
+                "Objem":    round(r["volume_ratio"], 2),
+            })
+        df_show = pd.DataFrame(rows)
+        st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "📥 Stáhnout CSV",
+            df_show.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"klondike_scan_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+        )
+
+        st.markdown("### 📌 Kandidáti")
+        for r in results:
+            box_class = (
+                "buyzone"    if r["signal"] == "NÁKUPNÍ ZÓNA"
+                else "dangerzone" if r["signal"] == "VYHNOUT SE / SLABÉ"
+                else "waitzone"
+            )
+
+            with st.expander(
+                f"{r['ticker']}  |  ${r['price']:.2f}  |  {r['signal']}  |  "
+                f"Quality {r['quality_score']:.0f}  |  Entry {r['entry_score']:.0f}"
+            ):
+                st.markdown(f"""
+                <div class="{box_class}">
+                    <b>{r['ticker']} — {r['signal']}</b><br>
+                    Cena: ${r['price']:.2f} | Vstupní zóna: ${r['zone_low']:.2f}–${r['zone_high']:.2f}<br>
+                    Preferovaný vstup: ${r['preferred_entry']:.2f} | Stop: ${r['stop']:.2f}<br>
+                    Cíl 1: ${r['target1']:.2f} (R:R {r['rr1']:.2f}) | Cíl 2: ${r['target2']:.2f}
+                </div>
+                """, unsafe_allow_html=True)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Trend", f"{r['trend_score']:.0f}/100")
+                c2.metric("Momentum", f"{r['momentum_score']:.0f}/100")
+                c3.metric("RS vs SPY (30d)", f"{r['rs_30d']:+.2f}%")
+                st.caption(f"RSI {r['rsi']:.1f} · ATR {r['atr_pct']:.2f}% · "
+                           f"Objem {r['volume_ratio']:.2f}× · R:R {r['rr1']:.2f}")
+                if st.button("Zobrazit detail", key=f"detail_{r['ticker']}"):
+                    st.session_state.selected_ticker = r["ticker"]
+
+# ============================================================
+# TAB 2 – DETAIL
+# ============================================================
+with tab_detail:
+    available = [r["ticker"] for r in st.session_state.results]
+    if not available:
+        st.info("Nejdříve spusťte sken; detail pak nabídne analyzované tickery.")
+    else:
+        default = st.session_state.selected_ticker
+        index = available.index(default) if default in available else 0
+        ticker = st.selectbox("Ticker", available, index=index, key="detail_ticker")
+        item = next(r for r in st.session_state.results if r["ticker"] == ticker)
+
+        # Lazy metadata
+        name, sector = basic_info(ticker)
+        pre_price, pre_change = premarket(ticker)
+
+        st.subheader(f"{ticker} — {name}")
+        st.caption(f"Sektor: {sector}")
+        if pre_price is not None:
+            st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
+
+        d = item["data"].tail(180)
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+        fig.add_trace(go.Candlestick(
+            x=d.index, open=d["Open"], high=d["High"],
+            low=d["Low"], close=d["Close"], name="Cena"
+        ), secondary_y=False)
+
+        for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"), ("EMA200", "#7c3aed")]:
+            fig.add_trace(go.Scatter(
+                x=d.index, y=d[col], name=col,
+                line={"color": color, "width": 1.2}
+            ), secondary_y=False)
+
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["BB_UPPER"], name="BB Upper",
+            line={"color": "#94a3b8", "width": 0.8, "dash": "dot"}
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["BB_LOWER"], name="BB Lower",
+            line={"color": "#94a3b8", "width": 0.8, "dash": "dot"},
+            fill="tonexty", fillcolor="rgba(148,163,184,0.08)"
+        ), secondary_y=False)
+
+        fig.add_hline(y=item["preferred_entry"], line_dash="dot",
+                      annotation_text="Vstup", line_color="#16a34a")
+        fig.add_hline(y=item["stop"], line_dash="dash",
+                      annotation_text="Stop", line_color="#dc2626")
+        fig.add_hline(y=item["target1"], line_dash="dash",
+                      annotation_text="TP1", line_color="#0891b2")
+        fig.add_hline(y=item["target2"], line_dash="dash",
+                      annotation_text="TP2", line_color="#0e7490")
+
+        fig.update_layout(
+            height=600, xaxis_rangeslider_visible=False,
+            margin={"l": 10, "r": 10, "t": 30, "b": 10},
+            legend={"orientation": "h", "y": 1.05},
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # RSI + MACD
+        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                             vertical_spacing=0.05,
+                             row_heights=[0.5, 0.5])
+        fig2.add_trace(go.Scatter(x=d.index, y=d["RSI14"], name="RSI",
+                                  line={"color": "#7c3aed"}), row=1, col=1)
+        fig2.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=1, col=1)
+        fig2.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=1, col=1)
+        fig2.update_yaxes(range=[0, 100], row=1, col=1)
+
+        fig2.add_trace(go.Bar(x=d.index, y=d["MACD_HIST"], name="MACD Hist",
+                              marker_color=np.where(d["MACD_HIST"] >= 0, "#16a34a", "#dc2626")),
+                       row=2, col=1)
+        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD"], name="MACD",
+                                  line={"color": "#2563eb"}), row=2, col=1)
+        fig2.add_trace(go.Scatter(x=d.index, y=d["MACD_SIGNAL"], name="Signal",
+                                  line={"color": "#f59e0b"}), row=2, col=1)
+
+        fig2.update_layout(height=400, margin={"l": 10, "r": 10, "t": 20, "b": 10},
+                           showlegend=True)
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Pozicování
+        st.markdown("### 💰 Pozicování")
+        shares, value, max_risk, per_share = position_size(
+            capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
+        )
+        a, b, c, dcol = st.columns(4)
+        a.metric("Počet akcií", shares)
+        b.metric("Hodnota pozice", f"${value:,.2f}")
+        c.metric("Riziko / akcie", f"${per_share:,.2f}")
+        dcol.metric("Max. riziko", f"${shares * per_share:,.2f}")
+
+        # Klíčové metriky
+        st.markdown("### 📊 Klíčové metriky")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Quality", f"{item['quality_score']:.1f}")
+        m2.metric("Entry", f"{item['entry_score']:.1f}")
+        m3.metric("Trend", f"{item['trend_score']:.1f}")
+        m4.metric("Momentum", f"{item['momentum_score']:.1f}")
+
+        m5, m6, m7, m8 = st.columns(4)
+        m5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
+        m6.metric("RSI", f"{item['rsi']:.1f}")
+        m7.metric("ATR %", f"{item['atr_pct']:.2f} %")
+        m8.metric("Objem", f"{item['volume_ratio']:.2f}×")
+
+        st.caption("Výpočet nezahrnuje poplatky, skluz, měnové riziko ani gapy. "
+                   "Nejde o investiční doporučení.")
+
+# ============================================================
+# TAB 3 – HISTORIE SIGNÁLŮ
+# ============================================================
+with tab_history:
+    st.subheader("Uložené signály")
+    if sb is None:
+        st.info("Historie není dostupná: není nakonfigurováno připojení Supabase.")
+    else:
+        col_f1, col_f2 = st.columns([1, 1])
+        with col_f1:
+            limit = st.number_input("Max. řádků", 50, 2000, 500, 50)
+        with col_f2:
+            only_today = st.checkbox("Pouze dnešní", False)
+
+        if st.button("🔄 Načíst historii", key="load_history"):
+            try:
+                q = sb.table("scanner_signals").select("*").order("signal_date", desc=True)
+                if only_today:
+                    today = datetime.now(timezone.utc).date().isoformat()
+                    q = q.eq("signal_date", today)
+                resp = q.limit(int(limit)).execute()
+                hist = pd.DataFrame(resp.data or [])
+                st.session_state.history_df = hist
+            except Exception as e:
+                log.exception("Načtení historie selhalo")
+                st.error(f"Historii se nepodařilo načíst: {e}")
+
+        hist = st.session_state.get("history_df")
+        if hist is not None:
+            if hist.empty:
+                st.info("V databázi zatím nejsou uložené signály.")
+            else:
+                st.dataframe(hist, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "📥 Stáhnout historii CSV",
+                    hist.to_csv(index=False).encode("utf-8-sig"),
+                    "klondike_historie.csv", "text/csv"
+                )
+
+# ============================================================
+# TAB 4 – UČÍCÍ SE PŘEHLED
+# ============================================================
+with tab_learning:
+    st.subheader("Vyhodnocení historických signálů")
+    st.caption("Orientační zpětné vyhodnocení. Denní OHLC data nemusí určit "
+               "pořadí zásahu stopu a cíle v rámci stejného dne.")
+
+    if sb is None:
+        st.info("Učící přehled vyžaduje připojení Supabase.")
+    else:
+        days = st.slider("Historie (dny)", 30, 365, 90, key="learning_days")
+
+        if st.button("🧠 Vyhodnotit signály", key="run_learning"):
+            with st.spinner("Vyhodnocuji historické signály…"):
+                learning = load_learning_stats(sb, days=days)
+            st.session_state.learning_df = learning
+
+        learning = st.session_state.get("learning_df")
+        if learning is not None:
+            if learning.empty:
+                st.info("Nejsou dostupná data k vyhodnocení.")
+            else:
+                # Statistiky
+                counts = learning["outcome"].value_counts()
+                tp1 = int(counts.get("TP1", 0))
+                sl  = int(counts.get("SL", 0))
+                amb = int(counts.get("AMBIGUOUS", 0))
+                opn = int(counts.get("OPEN", 0))
+                pend = int(counts.get("pending", 0))
+                unk = int(counts.get("unknown", 0))
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("TP1", tp1)
+                c2.metric("SL", sl)
+                c3.metric("Ambiguous", amb)
+                c4.metric("Open", opn)
+
+                resolved = tp1 + sl
+                if resolved > 0:
+                    win_rate = tp1 / resolved * 100
+                    st.metric("Win rate (TP1 vs SL)",
+                              f"{win_rate:.1f} %",
+                              help=f"Vyhodnoceno: {resolved} obchodů")
+
+                # Průměrný forward return podle outcome
+                valid = learning.dropna(subset=["forward_return_20d"])
+                if not valid.empty:
+                    st.markdown("#### Průměrný 20d forward return podle výsledku")
+                    agg = valid.groupby("outcome")["forward_return_20d"].agg(
+                        ["count", "mean"]).round(2)
+                    st.dataframe(agg, use_container_width=True)
+
+                # Průměrný return podle signálu
+                if not valid.empty:
+                    st.markdown("#### Průměrný 20d forward return podle typu signálu")
+                    agg2 = valid.groupby("signal")["forward_return_20d"].agg(
+                        ["count", "mean"]).round(2)
+                    st.dataframe(agg2, use_container_width=True)
+
+                st.markdown("#### Detailní data")
+                st.dataframe(learning, use_container_width=True, hide_index=True)
+
+                st.download_button(
+                    "📥 Stáhnout vyhodnocení CSV",
+                    learning.to_csv(index=False).encode("utf-8-sig"),
+                    "klondike_learning.csv", "text/csv"
+                )

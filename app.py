@@ -1,5 +1,5 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 3.1
+# KLONDIKE SPOT SCANNER 4.0 — sjednocená verze
 # Spot swing decision-support scanner s feedback loopem
 # ============================================================
 
@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Klondike Spot Scanner 3.1",
+    page_title="Klondike Spot Scanner 4.0",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -195,6 +195,24 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     d["LOW52W"]  = c.rolling(252, min_periods=60).min()
 
     return d
+
+
+def detect_patterns(d: pd.DataFrame) -> dict:
+    """Vzorce z druhého skeneru: průraz, propad, squeeze a potvrzení objemem."""
+    close = d["Close"]
+    high20 = close.rolling(20).max()
+    low20 = close.rolling(20).min()
+    breakout = bool(len(d) >= 21 and close.iloc[-1] >= high20.iloc[-2])
+    breakdown = bool(len(d) >= 21 and close.iloc[-1] <= low20.iloc[-2])
+    mid = close.rolling(20).mean()
+    std = close.rolling(20).std()
+    bandwidth = (4 * std) / mid.replace(0, np.nan)
+    baseline = bandwidth.rolling(50, min_periods=20).mean().iloc[-1]
+    squeeze = bool(pd.notna(baseline) and pd.notna(bandwidth.iloc[-1])
+                   and bandwidth.iloc[-1] < baseline * 0.8)
+    volume_spike = bool(safe_float(d["VOL_RATIO"].iloc[-1], 0) >= 1.5)
+    return {"breakout": breakout, "breakdown": breakdown,
+            "squeeze": squeeze, "volume_spike": volume_spike}
 
 
 # ---------------------- SUPPORT / RESISTANCE ------------------
@@ -560,6 +578,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
 
     scores = calculate_scores(d, spy)
     entry  = calculate_entry_engine(d, scores)
+    patterns = detect_patterns(d)
 
     return {
         "ticker":       ticker,
@@ -574,6 +593,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
         "ema50":        float(x["EMA50"]),
         "ema200":       float(x["EMA200"]),
         "macd_hist":    float(x["MACD_HIST"]),
+        **patterns,
         "high52":       float(x["HIGH52W"]) if pd.notna(x["HIGH52W"]) else np.nan,
         "low52":        float(x["LOW52W"])  if pd.notna(x["LOW52W"])  else np.nan,
         **scores,
@@ -608,7 +628,7 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h1>📈 Klondike Spot Scanner 3.1</h1>
+    <h1>📈 Klondike Spot Scanner 4.0</h1>
     <p>Technická analýza • Nákupní zóny • Risk management • Učící se historie signálů</p>
 </div>
 """, unsafe_allow_html=True)
@@ -640,6 +660,9 @@ with st.sidebar:
     only_buy_zone      = st.checkbox("Pouze NÁKUPNÍ ZÓNA", False)
     only_positive_rs   = st.checkbox("Pouze RS > S&P 500", False)
     exclude_overbought = st.checkbox("Vyloučit RSI > 75", True)
+    only_breakout = st.checkbox("Pouze cenové průrazy", False)
+    only_squeeze = st.checkbox("Pouze BB squeeze", False)
+    only_volume_spike = st.checkbox("Pouze zvýšený objem", False)
     max_workers        = st.slider("Paralelní vlákna", 2, 12, 4)
 
     st.markdown("---")
@@ -691,6 +714,9 @@ with tab_scan:
             if only_buy_zone and r["signal"] != "NÁKUPNÍ ZÓNA": continue
             if only_positive_rs and r["rs_30d"] <= 0: continue
             if exclude_overbought and r["rsi"] > 75: continue
+            if only_breakout and not r["breakout"]: continue
+            if only_squeeze and not r["squeeze"]: continue
+            if only_volume_spike and not r["volume_spike"]: continue
             results.append(r)
 
         results.sort(key=lambda z: (z["entry_score"], z["quality_score"]), reverse=True)
@@ -737,6 +763,9 @@ with tab_scan:
                 "RS 30d":   r["rs_30d"],
                 "RSI":      round(r["rsi"], 1),
                 "Objem":    round(r["volume_ratio"], 2),
+                "Průraz":   r["breakout"],
+                "Squeeze":  r["squeeze"],
+                "Objemový spike": r["volume_spike"],
             })
         df_show = pd.DataFrame(rows)
         st.dataframe(df_show, use_container_width=True, hide_index=True)
@@ -774,6 +803,12 @@ with tab_scan:
                 c3.metric("RS vs SPY (30d)", f"{r['rs_30d']:+.2f}%")
                 st.caption(f"RSI {r['rsi']:.1f} · ATR {r['atr_pct']:.2f}% · "
                            f"Objem {r['volume_ratio']:.2f}× · R:R {r['rr1']:.2f}")
+                labels = []
+                if r["breakout"]: labels.append("cenový průraz")
+                if r["breakdown"]: labels.append("riziko propadu")
+                if r["squeeze"]: labels.append("BB squeeze")
+                if r["volume_spike"]: labels.append("zvýšený objem")
+                st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
                 if st.button("Zobrazit detail", key=f"detail_{r['ticker']}"):
                     st.session_state.selected_ticker = r["ticker"]
 

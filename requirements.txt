@@ -1,7 +1,6 @@
-streamlit
-yfinance
-pandas
-prophet
-matplotlib
-supabase
-ib_insync
+streamlit>=1.32.0
+yfinance>=0.2.40
+pandas>=2.1.0
+numpy>=1.26.0
+plotly>=5.20.0
+supabase>=2.5.0

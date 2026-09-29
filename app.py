@@ -72,7 +72,7 @@ st.markdown("""
 DEFAULT_TICKERS = [
     "NVDA","AAPL","GOOGL","MSFT","AMZN","META","AVGO","TSLA","BRK-B",
     "WMT","LLY","MU","JPM","ORCL","XOM","V","MA","AMD","JNJ","COST",
-    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR",
+    "HD","CRM","UNH","PG","ABBV","BAC","IBM","DIS","INTC","KO","PLTR","NKE",
     "UBER","PYPL","PFE","BABA","SPY"
 ]
 
@@ -811,6 +811,59 @@ with tab_scan:
                 st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
                 if st.button("Zobrazit detail", key=f"detail_{r['ticker']}"):
                     st.session_state.selected_ticker = r["ticker"]
+                    st.session_state.show_inline_detail = True
+
+        # Zobraz detail hned zde, aby kliknutí nemuselo hledat jinou záložku.
+        if st.session_state.get("show_inline_detail", False):
+            detail_item = next(
+                (item for item in results
+                 if item["ticker"] == st.session_state.get("selected_ticker")),
+                None,
+            )
+            if detail_item is not None:
+                st.markdown("---")
+                st.subheader(f"📊 Detail: {detail_item['ticker']}")
+                meta_name, meta_sector = basic_info(detail_item["ticker"])
+                pre_price, pre_change = premarket(detail_item["ticker"])
+                st.caption(f"{meta_name} · Sektor: {meta_sector}")
+                if pre_price is not None:
+                    st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
+
+                detail_data = detail_item["data"].tail(180)
+                detail_fig = go.Figure()
+                detail_fig.add_trace(go.Candlestick(
+                    x=detail_data.index, open=detail_data["Open"],
+                    high=detail_data["High"], low=detail_data["Low"],
+                    close=detail_data["Close"], name="Cena"
+                ))
+                for col, color in [("EMA20", "#2563eb"), ("EMA50", "#f59e0b"),
+                                   ("EMA200", "#7c3aed")]:
+                    detail_fig.add_trace(go.Scatter(
+                        x=detail_data.index, y=detail_data[col], name=col,
+                        line={"color": color, "width": 1.2}
+                    ))
+                for value, label, color in [
+                    (detail_item["preferred_entry"], "Vstup", "#16a34a"),
+                    (detail_item["stop"], "Stop", "#dc2626"),
+                    (detail_item["target1"], "TP1", "#0891b2"),
+                ]:
+                    detail_fig.add_hline(y=value, line_dash="dash",
+                                         annotation_text=label, line_color=color)
+                detail_fig.update_layout(
+                    height=500, xaxis_rangeslider_visible=False,
+                    margin={"l": 10, "r": 10, "t": 30, "b": 10},
+                    legend={"orientation": "h", "y": 1.05},
+                )
+                st.plotly_chart(detail_fig, use_container_width=True,
+                                key=f"inline_detail_chart_{detail_item['ticker']}")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Quality", f"{detail_item['quality_score']:.1f}")
+                m2.metric("Entry score", f"{detail_item['entry_score']:.1f}")
+                m3.metric("RSI", f"{detail_item['rsi']:.1f}")
+                m4.metric("R:R", f"1 : {detail_item['rr1']:.2f}")
+                if st.button("Skrýt detail", key="hide_inline_detail"):
+                    st.session_state.show_inline_detail = False
+                    st.rerun()
 
 # ============================================================
 # TAB 2 – DETAIL

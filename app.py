@@ -1,5 +1,5 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 4.2 — sjednocená a revidovaná verze
+# KLONDIKE SPOT SCANNER 4.3 — sjednocená a revidovaná verze
 # Spot swing decision-support scanner s feedback loopem
 # ============================================================
 
@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Klondike Spot Scanner 4.2",
+    page_title="Klondike Spot Scanner 4.3",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -766,6 +766,53 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
     }
 
 
+def assess_trade_action(item: dict) -> dict:
+    """Vrátí orientační trend a akci podle pevně daných technických pravidel."""
+    bull = sum([
+        item["price"] > item["ema50"],
+        item["ema20"] > item["ema50"],
+        item["ema50"] > item["ema200"],
+        item["macd_hist"] > 0,
+        item["structure_trend"].startswith("BÝČÍ"),
+    ])
+    bear = sum([
+        item["price"] < item["ema50"],
+        item["ema20"] < item["ema50"],
+        item["ema50"] < item["ema200"],
+        item["macd_hist"] < 0,
+        item["structure_trend"].startswith("MEDVĚDÍ"),
+    ])
+    if bull >= 3 and bull > bear:
+        trend = "BÝČÍ"
+    elif bear >= 3 and bear > bull:
+        trend = "MEDVĚDÍ"
+    else:
+        trend = "NEUTRÁLNÍ / SMÍŠENÝ"
+
+    in_zone = item["zone_low"] <= item["price"] <= item["zone_high"]
+    quality = item["quality_score"]
+    rsi = item["rsi"]
+    if (trend == "BÝČÍ" and in_zone and quality >= 72
+            and item["entry_score"] >= 70 and rsi < 70):
+        action = "NAKUPOVAT"
+        reason = "Býčí trend, cena je v nákupní zóně a skóre potvrzuje silnější nastavení."
+    elif (trend == "BÝČÍ" and in_zone and quality >= 58 and rsi < 68):
+        action = "POMALU DOKUPOVAT"
+        reason = "Trend je býčí a cena je v nákupní zóně; postupný vstup omezuje riziko načasování."
+    elif (trend == "MEDVĚDÍ" and quality <= 38
+            and (item["breakdown"] or (item["price"] < item["ema200"] and item["macd_hist"] < 0))):
+        action = "PRODAT"
+        reason = "Slabé skóre a potvrzené medvědí podmínky včetně průlomu nebo ceny pod EMA200."
+    elif (trend == "MEDVĚDÍ" and (quality < 55 or item["price"] < item["ema200"])):
+        action = "POMALU ODPRODÁVAT"
+        reason = "Převládá medvědí trend; pravidla ukazují na opatrné snižování expozice."
+    else:
+        action = "DRŽET"
+        reason = "Podmínky pro nákup ani prodej nejsou podle nastavených pravidel dostatečně potvrzené."
+
+    return {"trend_label": trend, "action_label": action, "action_reason": reason}
+
+
 # ---------------------- PARALELNÍ SCAN ------------------------
 def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progress_cb=None):
     results = []
@@ -793,7 +840,7 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h1>📈 Klondike Spot Scanner 4.2</h1>
+    <h1>📈 Klondike Spot Scanner 4.3</h1>
     <p>Technická analýza • Struktura trhu • Zprávy • Nákupní zóny • Risk management</p>
 </div>
 """, unsafe_allow_html=True)
@@ -913,6 +960,7 @@ with tab_scan:
 
         rows = []
         for r in results:
+            assessment = assess_trade_action(r)
             rows.append({
                 "Ticker":   r["ticker"],
                 "Cena":     round(r["price"], 2),
@@ -933,6 +981,8 @@ with tab_scan:
                 "Objemový spike": r["volume_spike"],
                 "Struktura trhu": r["structure_trend"],
                 "Průlom struktury": r["structure_event"],
+                "Trend": assessment["trend_label"],
+                "Orientační akce": assessment["action_label"],
             })
         df_show = pd.DataFrame(rows)
         st.dataframe(df_show, use_container_width=True, hide_index=True)
@@ -945,13 +995,31 @@ with tab_scan:
         )
 
         st.markdown("### 📊 Podrobnosti jednotlivých instrumentů")
-        st.caption("Každý ticker má vlastní záložku s grafy, strukturou trhu a svými úrovněmi.")
-        instrument_tabs = st.tabs([item["ticker"] for item in results])
+        st.caption("Rozbalte instrument. Každý panel obsahuje jen jeho vlastní metriky, signál a grafy.")
 
-        for item, instrument_tab in zip(results, instrument_tabs):
+        for item in results:
             ticker = item["ticker"]
-            with instrument_tab:
+            assessment = assess_trade_action(item)
+            with st.expander(
+                f"{ticker} · {assessment['action_label']} · trend {assessment['trend_label']} · "
+                f"{item['signal']}",
+                expanded=False,
+            ):
                 st.subheader(f"{ticker} · {item['signal']}")
+                action_message = (
+                    f"**Orientační akce: {assessment['action_label']}** — "
+                    f"{assessment['action_reason']}"
+                )
+                if assessment["action_label"] in {"NAKUPOVAT", "POMALU DOKUPOVAT"}:
+                    st.success(action_message)
+                elif assessment["action_label"] == "DRŽET":
+                    st.info(action_message)
+                elif assessment["action_label"] == "POMALU ODPRODÁVAT":
+                    st.warning(action_message)
+                else:
+                    st.error(action_message)
+                st.info(f"**Trend: {assessment['trend_label']}** · {item['structure_event']}")
+                st.caption("Automatické technické vyhodnocení; zohledněte vlastní strategii a riziko.")
                 st.caption(
                     f"Cena ${item['price']:.2f} · Vstupní zóna ${item['zone_low']:.2f}–"
                     f"${item['zone_high']:.2f} · Preferovaný vstup ${item['preferred_entry']:.2f}"
@@ -998,6 +1066,31 @@ with tab_scan:
                         st.info("Pro tento ticker nejsou dostupné zprávy.")
 
                 d = item["data"].tail(180)
+                st.markdown("#### 📊 Klíčové metriky")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Quality", f"{item['quality_score']:.1f}/100")
+                k2.metric("Entry", f"{item['entry_score']:.1f}/100")
+                k3.metric("Trend", f"{item['trend_score']:.1f}/100")
+                k4.metric("Momentum", f"{item['momentum_score']:.1f}/100")
+                k5, k6, k7, k8 = st.columns(4)
+                k5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
+                k6.metric("RSI (14)", f"{item['rsi']:.1f}")
+                k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
+                k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
+
+                shares, value, _, per_share = position_size(
+                    capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
+                )
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("Počet akcií", shares)
+                p2.metric("Hodnota pozice", f"${value:,.2f}")
+                p3.metric("Riziko na akcii", f"${per_share:,.2f}")
+                p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
+                st.caption(
+                    "Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. "
+                    "Nejde o investiční doporučení."
+                )
+
                 st.markdown("#### 📈 Cena, klouzavé průměry a obchodní úrovně")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
                 fig.add_trace(go.Candlestick(
@@ -1061,30 +1154,7 @@ with tab_scan:
                 )
                 st.plotly_chart(fig2, use_container_width=True, key=f"indicators_chart_{ticker}")
 
-                st.markdown("#### 📊 Klíčové metriky")
-                k1, k2, k3, k4 = st.columns(4)
-                k1.metric("Quality", f"{item['quality_score']:.1f}/100")
-                k2.metric("Entry", f"{item['entry_score']:.1f}/100")
-                k3.metric("Trend", f"{item['trend_score']:.1f}/100")
-                k4.metric("Momentum", f"{item['momentum_score']:.1f}/100")
-                k5, k6, k7, k8 = st.columns(4)
-                k5.metric("RS vs SPY (30d)", f"{item['rs_30d']:+.2f} %")
-                k6.metric("RSI (14)", f"{item['rsi']:.1f}")
-                k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
-                k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
 
-                shares, value, _, per_share = position_size(
-                    capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
-                )
-                p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Počet akcií", shares)
-                p2.metric("Hodnota pozice", f"${value:,.2f}")
-                p3.metric("Riziko na akcii", f"${per_share:,.2f}")
-                p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
-                st.caption(
-                    "Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové gapy. "
-                    "Nejde o investiční doporučení."
-                )
 
 # ============================================================
 # TAB 2 – HISTORIE SIGNÁLŮ

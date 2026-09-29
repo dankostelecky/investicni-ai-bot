@@ -1,5 +1,5 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 4.1 — sjednocená a revidovaná verze
+# KLONDIKE SPOT SCANNER 4.2 — sjednocená a revidovaná verze
 # Spot swing decision-support scanner s feedback loopem
 # ============================================================
 
@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Klondike Spot Scanner 4.1",
+    page_title="Klondike Spot Scanner 4.2",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -224,6 +224,133 @@ def detect_patterns(d: pd.DataFrame) -> dict:
     volume_spike = bool(safe_float(d["VOL_RATIO"].iloc[-1], 0) >= 1.5)
     return {"breakout": breakout, "breakdown": breakdown,
             "squeeze": squeeze, "volume_spike": volume_spike}
+
+
+def analyze_market_structure(d: pd.DataFrame, wing: int = 2) -> dict:
+    """Klasifikuje swingovou strukturu a poslední potvrzený průraz."""
+    empty = {
+        "structure_trend": "NEDOSTATEK DAT",
+        "structure_event": "Bez potvrzeného průrazu",
+        "swing_high": np.nan,
+        "swing_low": np.nan,
+    }
+    if len(d) < max(20, wing * 2 + 5):
+        return empty
+
+    highs = d["High"].to_numpy(dtype=float)
+    lows = d["Low"].to_numpy(dtype=float)
+    high_points, low_points = [], []
+    # Swing se potvrdí až po wing následujících svíčkách.
+    for i in range(wing, len(d) - wing):
+        h_window = highs[i-wing:i+wing+1]
+        l_window = lows[i-wing:i+wing+1]
+        if highs[i] == np.max(h_window) and np.count_nonzero(h_window == highs[i]) == 1:
+            high_points.append((i, highs[i]))
+        if lows[i] == np.min(l_window) and np.count_nonzero(l_window == lows[i]) == 1:
+            low_points.append((i, lows[i]))
+
+    if len(high_points) < 2 or len(low_points) < 2:
+        return empty
+
+    previous_high, last_high = high_points[-2][1], high_points[-1][1]
+    previous_low, last_low = low_points[-2][1], low_points[-1][1]
+    higher_high = last_high > previous_high
+    higher_low = last_low > previous_low
+    lower_high = last_high < previous_high
+    lower_low = last_low < previous_low
+
+    if higher_high and higher_low:
+        trend = "BÝČÍ (HH + HL)"
+        trend_code = "BULLISH"
+    elif lower_high and lower_low:
+        trend = "MEDVĚDÍ (LH + LL)"
+        trend_code = "BEARISH"
+    else:
+        trend = "SMÍŠENÁ / BOČNÍ"
+        trend_code = "MIXED"
+
+    close = d["Close"]
+    last_close = float(close.iloc[-1])
+    previous_close = float(close.iloc[-2])
+    swing_high = float(last_high)
+    swing_low = float(last_low)
+    broke_up = last_close > swing_high and previous_close <= swing_high
+    broke_down = last_close < swing_low and previous_close >= swing_low
+
+    event = "Bez potvrzeného průrazu"
+    if broke_up:
+        event = "CHoCH nahoru" if trend_code == "BEARISH" else "BOS nahoru"
+    elif broke_down:
+        event = "CHoCH dolů" if trend_code == "BULLISH" else "BOS dolů"
+
+    return {
+        "structure_trend": trend,
+        "structure_event": event,
+        "swing_high": swing_high,
+        "swing_low": swing_low,
+    }
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_news_context(ticker: str) -> dict:
+    """Načte několik titulků a spočítá pouze orientační slovníkový sentiment."""
+    positive_terms = (
+        "beat", "beats", "upgrade", "upgraded", "buy rating", "growth", "record",
+        "surge", "rally", "profit", "strong", "outperform", "raises guidance",
+        "revenue up", "bullish", "wins contract", "approves", "approval",
+    )
+    negative_terms = (
+        "miss", "misses", "downgrade", "downgraded", "lawsuit", "fine", "probe",
+        "decline", "plunge", "crash", "loss", "weak", "underperform", "cuts guidance",
+        "revenue down", "bearish", "layoff", "recall", "investigation", "fraud",
+    )
+    articles = []
+    try:
+        obj = yf.Ticker(ticker)
+        try:
+            raw_news = obj.get_news(count=5, tab="news")
+        except Exception:
+            raw_news = getattr(obj, "news", [])
+
+        for raw in raw_news or []:
+            if not isinstance(raw, dict):
+                continue
+            content = raw.get("content") if isinstance(raw.get("content"), dict) else raw
+            title = str(content.get("title") or raw.get("title") or "").strip()
+            if not title:
+                continue
+            summary = str(content.get("summary") or content.get("description") or "").strip()
+            provider = content.get("provider") or raw.get("publisher") or {}
+            source = provider.get("displayName", "") if isinstance(provider, dict) else str(provider)
+            published = content.get("pubDate") or content.get("displayTime") or raw.get("providerPublishTime")
+            if isinstance(published, (int, float)):
+                published = datetime.fromtimestamp(published, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            elif published:
+                published = str(published)
+            else:
+                published = "Datum neuvedeno"
+            url_data = content.get("canonicalUrl") or content.get("clickThroughUrl") or raw.get("link") or ""
+            url = url_data.get("url", "") if isinstance(url_data, dict) else str(url_data)
+            text = f"{title} {summary}".lower()
+            score = sum(text.count(term) for term in positive_terms) - sum(text.count(term) for term in negative_terms)
+            articles.append({
+                "title": title[:300], "summary": summary[:700], "source": source,
+                "published": published, "url": url, "score": score,
+            })
+            if len(articles) >= 5:
+                break
+
+        total_score = sum(a["score"] for a in articles)
+        if total_score > 0:
+            sentiment = "Převážně pozitivní titulky"
+        elif total_score < 0:
+            sentiment = "Převážně negativní titulky"
+        else:
+            sentiment = "Smíšené nebo neutrální titulky"
+        return {"articles": articles, "sentiment": sentiment, "score": total_score}
+    except Exception as e:
+        log.warning("Načtení zpráv pro %s selhalo: %s", ticker, e)
+        return {"articles": [], "sentiment": "Zprávy nejsou dostupné", "score": 0}
 
 
 # ---------------------- SUPPORT / RESISTANCE ------------------
@@ -615,6 +742,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
     scores = calculate_scores(d, spy)
     entry  = calculate_entry_engine(d, scores)
     patterns = detect_patterns(d)
+    structure = analyze_market_structure(d)
 
     return {
         "ticker":       ticker,
@@ -630,6 +758,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
         "ema200":       float(x["EMA200"]),
         "macd_hist":    float(x["MACD_HIST"]),
         **patterns,
+        **structure,
         "high52":       float(x["HIGH52W"]) if pd.notna(x["HIGH52W"]) else np.nan,
         "low52":        float(x["LOW52W"])  if pd.notna(x["LOW52W"])  else np.nan,
         **scores,
@@ -664,8 +793,8 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h1>📈 Klondike Spot Scanner 4.1</h1>
-    <p>Technická analýza • Nákupní zóny • Risk management • Učící se historie signálů</p>
+    <h1>📈 Klondike Spot Scanner 4.2</h1>
+    <p>Technická analýza • Struktura trhu • Zprávy • Nákupní zóny • Risk management</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -711,6 +840,8 @@ tab_scan, tab_history, tab_learning = st.tabs([
 ])
 
 if "results" not in st.session_state:
+    st.session_state.results = []
+elif st.session_state.results and "structure_trend" not in st.session_state.results[0]:
     st.session_state.results = []
 if "regime" not in st.session_state:
     st.session_state.regime = None
@@ -800,6 +931,8 @@ with tab_scan:
                 "Průraz":   r["breakout"],
                 "Squeeze":  r["squeeze"],
                 "Objemový spike": r["volume_spike"],
+                "Struktura trhu": r["structure_trend"],
+                "Průlom struktury": r["structure_event"],
             })
         df_show = pd.DataFrame(rows)
         st.dataframe(df_show, use_container_width=True, hide_index=True)
@@ -843,6 +976,7 @@ with tab_scan:
                 if r["squeeze"]: labels.append("BB squeeze")
                 if r["volume_spike"]: labels.append("zvýšený objem")
                 st.caption("Vzorce: " + (", ".join(labels) if labels else "bez výrazného vzorce"))
+                st.caption(f"Struktura trhu: {r['structure_trend']} · {r['structure_event']}")
 
         st.markdown("### 🔎 Podrobnosti kandidáta")
         available = [item["ticker"] for item in results]
@@ -858,6 +992,30 @@ with tab_scan:
         st.caption(f"Sektor: {sector}")
         if pre_price is not None:
             st.caption(f"Pre-market: ${pre_price:.2f} ({pre_change:+.2f} %)")
+        st.markdown("#### 🧭 Struktura trhu")
+        st.write(f"**{item['structure_trend']}** · {item['structure_event']}")
+        st.caption(
+            f"Poslední potvrzené swingové úrovně: maximum ${item['swing_high']:.2f} · "
+            f"minimum ${item['swing_low']:.2f}. Swingy se potvrzují až po dalších svíčkách."
+        )
+
+        news = get_news_context(detail_ticker)
+        st.markdown("#### 📰 Kontext zpráv")
+        st.caption(
+            f"{news['sentiment']} (orientační skóre titulků: {news['score']:+d}). "
+            "Jde o jednoduché klíčové fráze, ne o porozumění významu článku."
+        )
+        if news["articles"]:
+            for index, article in enumerate(news["articles"]):
+                st.write(f"**{article['title']}**")
+                meta = " · ".join(part for part in [article["source"], article["published"]] if part)
+                st.caption(meta)
+                if article["summary"]:
+                    st.write(article["summary"])
+                if article["url"].startswith(("https://", "http://")):
+                    st.link_button("Otevřít článek", article["url"], key=f"news_{detail_ticker}_{index}")
+        else:
+            st.info("Pro tento ticker nejsou dostupné zprávy.")
 
         d = item["data"].tail(180)
         fig = make_subplots(specs=[[{"secondary_y": True}]])

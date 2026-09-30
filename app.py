@@ -74,7 +74,7 @@ st.markdown("""
 
 # ---------------------- TICKERY -------------------------------
 DEFAULT_TICKERS = [
-    "NVDA","AAPL","GOOGL","MSFT","AMZN","META","TSLA","BRK-B",
+    "AMBA","CRSP","NVDA","AAPL","GOOGL","MSFT","AMZN","META","TSLA","BRK-B",
     "WMT","MU","JPM","ORCL","XOM","AMD","JNJ","COST",
     "HD","UNH","BAC","IBM","INTC","BABA"
 ]

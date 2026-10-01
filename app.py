@@ -1,5 +1,5 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 4.4 — sjednocená a revidovaná verze
+# KLONDIKE SPOT SCANNER 4.5 — sjednocená a revidovaná verze
 # Spot swing decision-support scanner s feedback loopem
 # ============================================================
 
@@ -26,7 +26,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Spot Scanner 4.4",
+    page_title="Spot Scanner 4.5",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -358,8 +358,8 @@ def get_news_context(ticker: str) -> dict:
 
 
 # ---------------------- SUPPORT / RESISTANCE ------------------
-# Nastavení strategie 4.4: výchozí hypotézy, nikoli optimalizované parametry.
-BUY_SIGNAL = "NÁKUPNÍ ZÓNA · 4.4"
+# Nastavení strategie 4.5: výchozí hypotézy, nikoli optimalizované parametry.
+BUY_SIGNAL = "NÁKUPNÍ ZÓNA · 4.5"
 STRATEGY = {
     "lookback": 90, "wing": 2, "min_touches": 2,
     "touch_spacing": 5, "cluster_atr": 0.5,
@@ -370,6 +370,8 @@ STRATEGY = {
     "target1_atr": 2.0, "target2_atr": 3.0,
     "min_quality": 65, "max_rsi": 68,
     "holding_days": 5,
+    "min_dollar_volume": 10_000_000, "max_gap_atr": 1.0,
+    "max_signal_range_atr": 2.5,
 }
 
 
@@ -455,6 +457,85 @@ def support_resistance(d):
     return levels["support"], next(iter(levels["resistances"]), np.nan)
 
 
+def execution_bounds(support, zone_high, stop, target, atr):
+    """Povolený interval při NEMĚNNÉM stopu a cíli, bez poplatků/slippage."""
+    if not all(np.isfinite(v) for v in (support, zone_high, stop, target, atr)) or atr <= 0:
+        return np.nan, np.nan
+    lower = max(support, stop + STRATEGY["min_stop_atr"] * atr)
+    upper = min(zone_high,
+                (target + STRATEGY["min_rr"] * stop) / (1 + STRATEGY["min_rr"]),
+                stop + STRATEGY["max_stop_atr"] * atr)
+    if stop <= 0 or target <= lower or upper < lower - 1e-9:
+        return np.nan, np.nan
+    return lower, upper
+
+
+def trader_filters(d, result):
+    """Likvidita a výjimečný pohyb jsou blokace; konfluence/objem jen kontext."""
+    r = dict(result)
+    x = d.iloc[-1]
+    atr = safe_float(x["ATR14"])
+    prior_atr = safe_float(d["ATR14"].iloc[-2])
+    previous_close = safe_float(d["Close"].iloc[-2])
+    prior = d.iloc[-21:-1]
+    volume = pd.to_numeric(d.get("Volume", pd.Series(index=d.index, dtype=float)), errors="coerce")
+    prior_volume = volume.iloc[-21:-1]
+    valid_volume = prior_volume.where(prior_volume > 0).replace([np.inf, -np.inf], np.nan)
+    turnover = (prior["Close"] * valid_volume).dropna()
+    dollar_volume = safe_float(turnover.median()) if not turnover.empty else np.nan
+    enough_volume = len(valid_volume) == 20 and valid_volume.notna().all()
+    volume_baseline = safe_float(valid_volume.mean())
+    volume_ratio = safe_float(volume.iloc[-1]) / volume_baseline if volume_baseline > 0 else np.nan
+    gap_atr = (abs(float(x["Open"]) - previous_close) / prior_atr
+               if prior_atr > 0 else np.nan)
+    true_range = max(float(x["High"] - x["Low"]),
+                     abs(float(x["High"]) - previous_close),
+                     abs(float(x["Low"]) - previous_close))
+    range_atr = true_range / prior_atr if prior_atr > 0 else np.nan
+    extra = {
+        "Likvidita: medián obratu 20 dnů alespoň 10 mil.": bool(enough_volume and
+            dollar_volume >= STRATEGY["min_dollar_volume"] and safe_float(volume.iloc[-1], 0) > 0),
+        "Gap signálního dne nejvýše 1 ATR": bool(np.isfinite(gap_atr) and gap_atr <= STRATEGY["max_gap_atr"]),
+        "True range signálního dne nejvýše 2,5 ATR": bool(np.isfinite(range_atr) and range_atr <= STRATEGY["max_signal_range_atr"]),
+    }
+    checks = {**r["entry_checks"], **extra}
+    eligible = all(checks.values())
+    confluence = [col for col in ("EMA20", "EMA50")
+                  if np.isfinite(r["support"]) and atr > 0
+                  and abs(safe_float(x.get(col)) - r["support"]) <= 0.3 * atr]
+    # Menší objem posledních 3 dnů korekce vs předchozích 17; pouze kontext.
+    older = safe_float(valid_volume.iloc[:-3].mean())
+    recent = safe_float(valid_volume.iloc[-3:].mean())
+    quiet_pullback = bool(older > 0 and recent < older * 0.8
+                          and len(d) >= 5 and d["Close"].iloc[-2] < d["Close"].iloc[-5])
+    lower, upper = execution_bounds(r["support"], r["zone_high"], r["stop"], r["target1"], atr)
+    r.update({
+        "entry_checks": checks, "buy_allowed": eligible,
+        "entry_score": round(100 * sum(checks.values()) / len(checks), 1),
+        "entry_reason": ("Všechny vstupní podmínky splněny na posledním uzavřeném dni."
+                         if eligible else "Nesplněno: " + "; ".join(k for k, ok in checks.items() if not ok)),
+        "signal": BUY_SIGNAL if eligible else ("NEVSTUPOVAT" if r["buy_allowed"] else r["signal"]),
+        "median_dollar_volume": dollar_volume, "signal_gap_atr": gap_atr,
+        "signal_range_atr": range_atr, "bounce_volume_ratio": volume_ratio,
+        "quiet_pullback": quiet_pullback, "confluence": confluence,
+        "min_execution_price": lower, "max_execution_price": upper,
+        "one_r_price": r["preferred_entry"] + r["risk_per_share"],
+        "strategy_version": "4.5",
+    })
+    return r
+
+
+def check_execution_price(item, proposed):
+    """Pouze ručně zadaná cena vs uložený plán; není nový živý signál."""
+    lower, upper = item["min_execution_price"], item["max_execution_price"]
+    risk = proposed - item["stop"]
+    rr = (item["target1"] - proposed) / risk if risk > 0 else np.nan
+    ok = bool(item["buy_allowed"] and np.isfinite(proposed)
+              and lower - 1e-9 <= proposed <= upper + 1e-9
+              and np.isfinite(rr) and rr >= STRATEGY["min_rr"] - 1e-9)
+    return ok, rr
+
+
 def calculate_entry_engine(d: pd.DataFrame, scores: dict,
                            regime: str = "UNKNOWN", data_ok: bool = True) -> dict:
     x = d.iloc[-1]
@@ -523,7 +604,7 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict,
         signal = "NEVSTUPOVAT"
     reason = ("Všechny vstupní podmínky splněny na posledním uzavřeném dni."
               if eligible else "Nesplněno: " + "; ".join(k for k, v in checks.items() if not v))
-    return {
+    result = {
         "support": support, "resistance": resistance,
         "support_touches": levels["support_touches"], "support_age": levels["support_age"],
         "aggressive_entry": zone_high, "preferred_entry": entry,
@@ -537,6 +618,7 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict,
         "signal": signal, "buy_allowed": eligible, "entry_checks": checks,
         "entry_reason": reason, "trend_ok": trend_ok,
     }
+    return trader_filters(d, result)
 
 
 def assess_trade_action(item: dict) -> dict:
@@ -696,7 +778,7 @@ def save_signals_bulk(sb, results: list):
 
 
 def load_learning_stats(sb, days: int = 90):
-    """Orientační simulace pouze signálů 4.4, vstup na příštím open, max. 5 dnů.
+    """Orientační simulace pouze signálů 4.5, vstup na příštím open, max. 5 dnů.
 
     Není to walk-forward backtest ani učení parametrů. Gap mimo zónu = bez vstupu.
     Denní OHLC nezná pořadí SL/TP; takový obchod se nezařadí mezi výhry/prohry.
@@ -734,8 +816,10 @@ def load_learning_stats(sb, days: int = 90):
             entry = float(window["Open"].iloc[0])
             support = safe_float(row.get("support"))
             upper = safe_float(row.get("zone_high"))
+            stored_atr = safe_float(row.get("atr"))
+            lower, upper = execution_bounds(support, upper, stop, tp, stored_atr)
             if not (np.isfinite(stop) and np.isfinite(tp) and stop < entry < tp
-                    and support <= entry <= upper
+                    and lower - 1e-9 <= entry <= upper + 1e-9
                     and (tp-entry)/(entry-stop) >= STRATEGY["min_rr"]):
                 returns.append(result); outcomes.append("NOT_FILLED"); continue
             outcome = "OPEN"
@@ -843,7 +927,7 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 
 st.markdown("""
 <div class="hero">
-    <h3>📈 Spot Scanner 4.4</h3>
+    <h3>📈 Spot Scanner 4.5</h3>
     <p>Technická analýza • Struktura trhu • Zprávy • Nákupní zóny • Risk management</p>
 </div>
 """, unsafe_allow_html=True)
@@ -893,7 +977,7 @@ tab_scan, tab_history, tab_learning = st.tabs([
 
 if "results" not in st.session_state:
     st.session_state.results = []
-elif st.session_state.results and "buy_allowed" not in st.session_state.results[0]:
+elif st.session_state.results and st.session_state.results[0].get("strategy_version") != "4.5":
     st.session_state.results = []
 if "regime" not in st.session_state:
     st.session_state.regime = None
@@ -982,6 +1066,10 @@ with tab_scan:
                 "Od supportu (ATR)": round(r["support_distance_atr"], 2),
                 "Testy supportu": r["support_touches"],
                 "Důvod": r["entry_reason"],
+                "Max. vstup (plán)": r["max_execution_price"],
+                "Obrat 20d (medián)": r["median_dollar_volume"],
+                "Gap / ATR": r["signal_gap_atr"],
+                "Konfluence": ", ".join(r["confluence"]),
                 "Datum dat": str(r["data"].index[-1].date()),
                 "RS 30d":   r["rs_30d"],
                 "RSI":      round(r["rsi"], 1),
@@ -1097,13 +1185,40 @@ with tab_scan:
                 k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
                 k8.metric("Objem vs průměr", f"{item['volume_ratio']:.2f}×")
 
+                st.markdown("#### 🧰 Traderský plán")
+                t1, t2, t3 = st.columns(3)
+                t1.metric("Max. vstup podle plánu", f"${item['max_execution_price']:.4f}")
+                t2.metric("Obrat 20d – medián", f"{item['median_dollar_volume']/1e6:.1f} mil.")
+                t3.metric("Objem odrazu / předchozích 20 dnů", f"{item['bounce_volume_ratio']:.2f}×")
+                st.caption("Obrat = upravená cena × objem, orientačně v měně kotace (u US tickerů USD). "
+                           "Není to měření spreadu ani hloubky trhu. Maximum vstupu není pokyn k nákupu.")
+                st.write("**Souběh se supportem:** " + (", ".join(item["confluence"]) or "bez blízké EMA20/EMA50"))
+                st.write("**Korekce na klesajícím objemu:** " + ("ano" if item["quiet_pullback"] else "nepotvrzena"))
+                st.caption("Konfluence a objem jsou doplňkové informace; nenahrazují povinné podmínky.")
+                st.write(f"**Plán od signálního vstupu:** stop ${item['stop']:.2f}; "
+                         f"TP1 ${item['target1']:.2f}; úroveň +1R ${item['one_r_price']:.2f}; "
+                         f"časový výstup nejpozději na konci {STRATEGY['holding_days']}. obchodního dne včetně vstupního.")
+                st.caption("+1R je orientační milník, ne automatický přesun stopu. "
+                           "Před objednávkou ověřte výsledky firmy, zprávy, spread a aktuální graf. "
+                           "Tyto kontroly nejsou automatizovány; aplikace pokyny neprovádí.")
+                proposed = st.number_input("Zkušební vstupní cena (ručně, není živá kotace)",
+                                           min_value=0.01, value=max(0.01, float(item["price"])),
+                                           step=0.01, format="%.4f", key=f"proposed_{ticker}")
+                price_ok, proposed_rr = check_execution_price(item, proposed)
+                st.write(f"R:R při této ceně, se stejným stopem a TP1: {proposed_rr:.2f}")
+                if price_ok:
+                    st.success("Zadaná cena vyhovuje uloženému plánu. Aktuální tržní situace nebyla znovu ověřena.")
+                else:
+                    st.warning("Zadaná cena nebo původní signál nesplňuje plán: nevstupovat podle tohoto výpočtu.")
+                st.caption("Pro nový signální den spusťte nový sken. Simulace ceny níže nemění uložený signál.")
+
                 shares, value, _, per_share = position_size(
-                    capital, risk_pct, item["preferred_entry"], item["stop"], max_position_pct
+                    capital, risk_pct, proposed, item["stop"], max_position_pct
                 )
-                if not item["buy_allowed"]:
+                if not price_ok:
                     shares, value, per_share = 0, 0.0, 0.0
                 p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Počet akcií", shares)
+                p1.metric("Počet akcií – zkušební cena", shares)
                 p2.metric("Hodnota pozice", f"${value:,.2f}")
                 p3.metric("Riziko na akcii", f"${per_share:,.2f}")
                 p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
@@ -1226,7 +1341,7 @@ with tab_history:
 # ============================================================
 with tab_learning:
     st.subheader("Vyhodnocení historických signálů")
-    st.caption("Pouze nákupní signály 4.4. Model: příští open v zóně, kontrola R:R, výstup do 5 dnů. "
+    st.caption("Pouze nákupní signály 4.5. Model: příští open v zóně, kontrola R:R, výstup do 5 dnů. "
                "Jde o simulaci bez nákladů, nikoli validaci ziskovosti. Denní OHLC data nemusí určit "
                "pořadí zásahu stopu a cíle v rámci stejného dne.")
 

@@ -1,7 +1,7 @@
 # ============================================================
-# KLONDIKE SPOT SCANNER 4.7 — sjednocená a revidovaná verze
+# KLONDIKE SPOT SCANNER 4.8 — sjednocená a revidovaná verze
 # Spot swing decision-support scanner s feedback loopem
-# 4.7: sezónnost každého tickeru podle data a swingového horizontu.
+# 4.8: přepínač Akcie / Zemědělské komodity, počasí a volitelný horizont plodin.
 # Zachováno: opční rizikový filtr; dividendy/výsledky; správa long pozice.
 # Instalace: pip install streamlit yfinance numpy pandas plotly supabase tzdata
 # Spuštění: streamlit run app.py
@@ -11,6 +11,9 @@
 # ============================================================
 
 import re
+import json
+import urllib.request
+import urllib.parse
 from calendar import monthrange
 import time
 import logging
@@ -35,7 +38,7 @@ log = logging.getLogger("klondike")
 
 # ---------------------- KONFIGURACE ---------------------------
 st.set_page_config(
-    page_title="Spot Scanner 4.7",
+    page_title="Spot Scanner 4.8",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -89,6 +92,57 @@ DEFAULT_TICKERS = [
 ]
 
 TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+
+# Londýnské USD kotace, ověřené podle seznamu emitenta WisdomTree.
+# Jde o ETC navázaná na futures, nikoli o přímou cenu tuny plodiny.
+CROP_PRODUCTS = {
+    "WEAT.L": {"crop": "wheat", "name": "Pšenice", "product": "WisdomTree Wheat", "currency": "USD",
+               "source": "https://www.wisdomtree.com/ie/products/commodities/wisdomtree-wheat"},
+    "CORN.L": {"crop": "corn", "name": "Kukuřice", "product": "WisdomTree Corn", "currency": "USD",
+               "source": "https://www.wisdomtree.com/gb/products/commodities/wisdomtree-corn"},
+    "SOYB.L": {"crop": "soy", "name": "Sója", "product": "WisdomTree Soybeans", "currency": "USD",
+               "source": "https://www.wisdomtree.com/gb/products/commodities/wisdomtree-soybeans"},
+}
+CROP_NAMES = {"wheat": "Pšenice", "corn": "Kukuřice", "soy": "Sója"}
+
+# Hrubé měsíční kalendáře citlivosti a MODELOVÉ váhy sledovaných bodů.
+# Váhy nejsou podíly na světové produkci. Nejde o kompletní mapu pěstitelských ploch.
+CROP_CALENDARS = {
+    "corn_us": {4: .3, 5: .4, 6: .7, 7: 1.0, 8: .9, 9: .5, 10: .2},
+    "corn_br": {1: .8, 2: .6, 3: .7, 4: 1.0, 5: .9, 6: .6, 7: .3, 9: .3, 10: .4, 11: .7, 12: 1.0},
+    "corn_ar": {1: 1.0, 2: .9, 3: .7, 4: .5, 5: .3, 9: .3, 10: .5, 11: .7, 12: 1.0},
+    "soy_us": {4: .3, 5: .4, 6: .6, 7: .8, 8: 1.0, 9: .7, 10: .3},
+    "soy_br": {1: 1.0, 2: .8, 3: .5, 4: .3, 9: .3, 10: .4, 11: .7, 12: .9},
+    "soy_ar": {1: .9, 2: 1.0, 3: .8, 4: .5, 5: .3, 10: .3, 11: .4, 12: .7},
+    "wheat_winter": {3: .4, 4: .7, 5: 1.0, 6: .9, 7: .5, 9: .3, 10: .4, 11: .2},
+    "wheat_au": {5: .3, 6: .4, 7: .5, 8: .7, 9: 1.0, 10: .9, 11: .5, 12: .3},
+}
+CROP_REGIONS = {
+    "corn": [
+        {"name": "USA — Iowa", "lat": 42.03, "lon": -93.62, "weight": .25, "calendar": "corn_us"},
+        {"name": "USA — Illinois", "lat": 40.11, "lon": -88.23, "weight": .25, "calendar": "corn_us"},
+        {"name": "Brazílie — Mato Grosso", "lat": -12.54, "lon": -55.72, "weight": .30, "calendar": "corn_br"},
+        {"name": "Argentina — Córdoba", "lat": -32.41, "lon": -63.24, "weight": .20, "calendar": "corn_ar"},
+    ],
+    "soy": [
+        {"name": "USA — Iowa", "lat": 42.03, "lon": -93.62, "weight": .20, "calendar": "soy_us"},
+        {"name": "USA — Illinois", "lat": 40.11, "lon": -88.23, "weight": .20, "calendar": "soy_us"},
+        {"name": "Brazílie — Mato Grosso", "lat": -12.54, "lon": -55.72, "weight": .40, "calendar": "soy_br"},
+        {"name": "Argentina — Córdoba", "lat": -32.41, "lon": -63.24, "weight": .20, "calendar": "soy_ar"},
+    ],
+    "wheat": [
+        {"name": "USA — Illinois", "lat": 38.53, "lon": -89.12, "weight": .30, "calendar": "wheat_winter"},
+        {"name": "Francie — Centre", "lat": 48.45, "lon": 1.49, "weight": .25, "calendar": "wheat_winter"},
+        {"name": "Ukrajina — střed", "lat": 48.51, "lon": 32.26, "weight": .25, "calendar": "wheat_winter"},
+        {"name": "Austrálie — New South Wales", "lat": -32.25, "lon": 148.61, "weight": .20, "calendar": "wheat_au"},
+    ],
+}
+WEATHER_RULES = {
+    "forecast_days": 14, "min_members": 15, "min_coverage": .80,
+    "max_age_hours": 6, "max_reference_age_hours": 72,
+    "min_common_days": 5, "revision_block": -.20,
+    "heat_c": 35.0, "frost_c": -2.0, "dry_day_mm": 1.0, "heavy_rain_mm": 40.0,
+}
 
 # ---------------------- POMOCNÉ FUNKCE ------------------------
 
@@ -367,8 +421,8 @@ def get_news_context(ticker: str) -> dict:
 
 
 # ---------------------- SUPPORT / RESISTANCE ------------------
-# Nastavení strategie 4.7: výchozí hypotézy, nikoli optimalizované parametry.
-BUY_SIGNAL = "NÁKUPNÍ ZÓNA · 4.7"
+# Nastavení strategie 4.8: výchozí hypotézy, nikoli optimalizované parametry.
+BUY_SIGNAL = "NÁKUPNÍ ZÓNA · 4.8"
 STRATEGY = {
     "lookback": 90, "wing": 2, "min_touches": 2,
     "touch_spacing": 5, "cluster_atr": 0.5,
@@ -479,7 +533,7 @@ def execution_bounds(support, zone_high, stop, target, atr):
     return lower, upper
 
 
-def trader_filters(d, result):
+def trader_filters(d, result, mode="stocks"):
     """Likvidita a výjimečný pohyb jsou blokace; konfluence/objem jen kontext."""
     r = dict(result)
     x = d.iloc[-1]
@@ -501,9 +555,10 @@ def trader_filters(d, result):
                      abs(float(x["High"]) - previous_close),
                      abs(float(x["Low"]) - previous_close))
     range_atr = true_range / prior_atr if prior_atr > 0 else np.nan
+    minimum_turnover = 1_000_000 if mode == "crops" else STRATEGY["min_dollar_volume"]
     extra = {
-        "Likvidita: medián obratu 20 dnů alespoň 10 mil.": bool(enough_volume and
-            dollar_volume >= STRATEGY["min_dollar_volume"] and safe_float(volume.iloc[-1], 0) > 0),
+        f"Likvidita: medián obratu 20 dnů alespoň {minimum_turnover/1e6:g} mil.": bool(enough_volume and
+            dollar_volume >= minimum_turnover and safe_float(volume.iloc[-1], 0) > 0),
         "Cenová mezera signálního dne nejvýše 1 ATR": bool(np.isfinite(gap_atr) and gap_atr <= STRATEGY["max_gap_atr"]),
         "Skutečné cenové rozpětí signálního dne nejvýše 2,5 ATR": bool(np.isfinite(range_atr) and range_atr <= STRATEGY["max_signal_range_atr"]),
     }
@@ -529,7 +584,7 @@ def trader_filters(d, result):
         "quiet_pullback": quiet_pullback, "confluence": confluence,
         "min_execution_price": lower, "max_execution_price": upper,
         "one_r_price": r["preferred_entry"] + r["risk_per_share"],
-        "strategy_version": "4.7",
+        "strategy_version": "4.8",
     })
     return r
 
@@ -541,6 +596,8 @@ def check_execution_price(item, proposed):
     rr = (item["target1"] - proposed) / risk if risk > 0 else np.nan
     context = item.get("options_context", {})
     context_fresh = not context.get("usable") or options_are_current(context)
+    if item.get("mode") == "crops":
+        context_fresh = weather_is_current(item.get("weather_context", {}))
     ok = bool(item["buy_allowed"] and context_fresh and np.isfinite(proposed)
               and lower - 1e-9 <= proposed <= upper + 1e-9
               and np.isfinite(rr) and rr >= STRATEGY["min_rr"] - 1e-9)
@@ -548,7 +605,7 @@ def check_execution_price(item, proposed):
 
 
 def calculate_entry_engine(d: pd.DataFrame, scores: dict,
-                           regime: str = "UNKNOWN", data_ok: bool = True) -> dict:
+                           regime: str = "UNKNOWN", data_ok: bool = True, mode="stocks") -> dict:
     x = d.iloc[-1]
     price, atr = float(x["Close"]), safe_float(x["ATR14"])
     levels = structural_levels(d)
@@ -595,13 +652,14 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict,
         "Cena u supportu": in_zone,
         "Potvrzení odrazu": bounce,
         "Rostoucí trend": trend_ok,
-        "SPY není medvědí a je dostupný": regime in {"BULLISH", "NEUTRAL"},
         "Skóre kvality alespoň 65": scores["quality_score"] >= STRATEGY["min_quality"],
         "RSI pod limitem": safe_float(x["RSI14"], 100) < STRATEGY["max_rsi"],
         "Strukturální cíl a R:R alespoň 1,5": bool(np.isfinite(rr1) and rr1 >= STRATEGY["min_rr"]),
         "Stop v povoleném rozsahu": bool(valid and stop > 0 and
                 0 < risk <= STRATEGY["max_stop_atr"] * atr),
     }
+    if mode == "stocks":
+        checks["SPY není medvědí a je dostupný"] = regime in {"BULLISH", "NEUTRAL"}
     eligible = all(checks.values())
     if eligible:
         signal = BUY_SIGNAL
@@ -629,7 +687,7 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict,
         "signal": signal, "buy_allowed": eligible, "entry_checks": checks,
         "entry_reason": reason, "trend_ok": trend_ok,
     }
-    return trader_filters(d, result)
+    return trader_filters(d, result, mode)
 
 
 # ---------------------- SEZÓNNOST KAŽDÉHO TICKERU --------------
@@ -815,12 +873,12 @@ def apply_seasonality_filter(entry, context):
     else:
         r["entry_reason"] = entry["entry_reason"]
     r["entry_reason"] += " Sezónnost: " + context["reason"]
-    r["strategy_version"] = "4.7"
+    r["strategy_version"] = "4.8"
     return r
 
 
 def render_seasonality_panel(ticker, context):
-    st.markdown("#### 📅 Sezónnost této akcie")
+    st.markdown("#### 📅 Sezónnost tohoto instrumentu")
     message = f"**{context['status']}** — {context['reason']}"
     if context["entry_block"]:
         st.warning(message)
@@ -1136,7 +1194,7 @@ def apply_options_filter(entry, context):
         r["entry_reason"] = "Nesplněno: " + "; ".join(k for k, ok in checks.items() if not ok)
     if not context.get("usable"):
         r["entry_reason"] += " Opční údaje chybí nebo nejsou úplné; opční filtr se nepoužil."
-    r["strategy_version"] = "4.7"
+    r["strategy_version"] = "4.8"
     return r
 
 
@@ -1148,6 +1206,9 @@ def assess_trade_action(item: dict, held=False, position_stop=None, position_tar
     """
     result = {"trend_label": "BÝČÍ" if item["trend_ok"] else "NEPOTVRZENÝ / SLABÝ"}
     if not held:
+        if item.get("mode") == "crops" and not weather_is_current(item.get("weather_context", {})):
+            return {**result, "action_label": "ČEKAT / NEVSTUPOVAT",
+                    "action_reason": "Počasí chybí, není úplné nebo je snímek starší než 6 hodin. Spusťte nový sken."}
         opts = item.get("options_context", {})
         if opts.get("usable") and not options_are_current(opts):
             return {**result, "action_label": "ČEKAT / NEVSTUPOVAT",
@@ -1425,7 +1486,7 @@ def save_signals_bulk(sb, results: list):
 
 
 def load_learning_stats(sb, days: int = 90):
-    """Orientační simulace pouze signálů 4.7, vstup na příštím open, max. 5 dnů.
+    """Simulace nákupů 4.8 aktuální části a horizontu; vstup na příštím open.
 
     Není to walk-forward backtest ani učení parametrů. Gap mimo zónu = bez vstupu.
     Denní OHLC nezná pořadí SL/TP; takový obchod se nezařadí mezi výhry/prohry.
@@ -1493,7 +1554,7 @@ def load_learning_stats(sb, days: int = 90):
                     outcome = "TIME_EXIT"
                     result = (float(window["Close"].iloc[-1]) / entry - 1) * 100
             returns.append(result); outcomes.append(outcome)
-        df["forward_return_5d"] = returns
+        df[f"forward_return_{STRATEGY['holding_days']}d"] = returns
         df["outcome"] = outcomes
         return df
     except Exception as e:
@@ -1501,8 +1562,213 @@ def load_learning_stats(sb, days: int = 90):
         return pd.DataFrame()
 
 
+# ---------------------- PLODINY A POČASÍ ----------------------
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_crop_benchmark():
+    """Rovnoměrný modelový koš tří ETC; všechny složky na stejných datech."""
+    components = []
+    for ticker in CROP_PRODUCTS:
+        hist = download_history(ticker)
+        if hist.empty:
+            return pd.DataFrame()
+        s = hist["Close"].copy()
+        s.index = pd.Index(pd.DatetimeIndex(s.index).date)
+        components.append(s.rename(ticker))
+    common = pd.concat(components, axis=1, join="inner").dropna().sort_index()
+    if len(common) < 60 or (common <= 0).any().any():
+        return pd.DataFrame()
+    basket = common.div(common.iloc[0]).mean(axis=1) * 100
+    basket.index = pd.to_datetime(basket.index)
+    return pd.DataFrame({"Open": basket, "High": basket, "Low": basket,
+                         "Close": basket, "Volume": 1.0})
+
+
+def parse_ensemble(payload):
+    """Členy páruje pro všechny proměnné; chybějící hodnoty nejsou nuly."""
+    daily = payload.get("daily", {})
+    dates = daily.get("time", [])
+    variables = ("temperature_2m_max", "temperature_2m_min", "precipitation_sum")
+    units = payload.get("daily_units", {})
+    if any(units.get(v) != ("mm" if v == "precipitation_sum" else "°C") for v in variables):
+        raise ValueError("Neočekávané jednotky předpovědi.")
+    members = set.intersection(*[
+        {k[len(v):] for k in daily if k == v or k.startswith(v + "_member")}
+        for v in variables])
+    records = []
+    for i, day in enumerate(dates):
+        rows = []
+        for suffix in sorted(members):
+            arrays = [daily[v + suffix] for v in variables]
+            if any(len(a) <= i for a in arrays):
+                continue
+            values = [safe_float(a[i]) for a in arrays]
+            if (all(np.isfinite(x) for x in values) and values[0] >= values[1]
+                    and values[2] >= 0):
+                rows.append(values)
+        if len(rows) < WEATHER_RULES["min_members"]:
+            continue
+        a = np.array(rows)
+        records.append({"date": pd.Timestamp(day).date().isoformat(), "members": len(rows),
+                        "max_c": float(np.median(a[:, 0])), "min_c": float(np.median(a[:, 1])),
+                        "rain_mm": float(np.median(a[:, 2])),
+                        "heat": float(np.mean(a[:, 0] >= WEATHER_RULES["heat_c"])),
+                        "frost": float(np.mean(a[:, 1] <= WEATHER_RULES["frost_c"])),
+                        "low_rain": float(np.mean(a[:, 2] < WEATHER_RULES["dry_day_mm"])),
+                        "heavy_rain": float(np.mean(a[:, 2] >= WEATHER_RULES["heavy_rain_mm"]))})
+    return records
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_region_weather(lat, lon):
+    params = {"latitude": lat, "longitude": lon, "models": "gfs_seamless",
+              "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum",
+              "timezone": "auto", "forecast_days": WEATHER_RULES["forecast_days"],
+              "temperature_unit": "celsius", "precipitation_unit": "mm"}
+    url = "https://ensemble-api.open-meteo.com/v1/ensemble?" + urllib.parse.urlencode(params)
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "CropScanner/4.8"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.load(response)
+        local_today = datetime.now(timezone.utc) + timedelta(seconds=payload.get("utc_offset_seconds", 0))
+        days = [d for d in parse_ensemble(payload) if d["date"] >= local_today.date().isoformat()]
+        return {"days": days, "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "error": None, "timezone": payload.get("timezone")}
+    except Exception as exc:
+        return {"days": [], "fetched_at": None, "error": str(exc), "timezone": None}
+
+
+def weather_is_current(context, now=None):
+    if not context.get("usable"):
+        return False
+    try:
+        now = pd.Timestamp(now or datetime.now(timezone.utc))
+        fetched = pd.Timestamp(context["fetched_at"])
+        age = (now - fetched).total_seconds() / 3600
+        return 0 <= age <= WEATHER_RULES["max_age_hours"]
+    except (KeyError, ValueError, TypeError):
+        return False
+
+
+def weather_stress(day, calendar):
+    sensitivity = CROP_CALENDARS[calendar].get(pd.Timestamp(day["date"]).month, 0.0)
+    # Málo srážek není měření sucha. Maximum brání sčítání souvisejících rizik.
+    return sensitivity * max(day["heat"], day["frost"], .5 * day["low_rain"],
+                             .7 * day["heavy_rain"])
+
+
+def calculate_crop_weather(crop, regions, previous=None, now=None):
+    now = pd.Timestamp(now or datetime.now(timezone.utc))
+    configured = CROP_REGIONS[crop]
+    valid, summary, timestamps = {}, [], []
+    for region in configured:
+        data = regions.get(region["name"], {})
+        days = data.get("days", [])
+        current = weather_is_current({"usable": True, "fetched_at": data.get("fetched_at")}, now)
+        if not current or len(days) < WEATHER_RULES["forecast_days"]:
+            summary.append({"Oblast": region["name"], "Stav": "Nedostatek aktuálních dat",
+                            "Detail": data.get("error") or "Neúplná předpověď"})
+            continue
+        timestamps.append(data["fetched_at"])
+        valid[region["name"]] = {d["date"]: weather_stress(d, region["calendar"]) for d in days}
+        summary.append({"Oblast": region["name"], "Stav": "Dostupné", "Modelová váha": region["weight"],
+                        "Od": days[0]["date"], "Do": days[-1]["date"],
+                        "Nejméně členů": min(d["members"] for d in days),
+                        "Nejvyšší medián Tmax (°C)": max(d["max_c"] for d in days),
+                        "Nejnižší medián Tmin (°C)": min(d["min_c"] for d in days),
+                        "Součet denních mediánů srážek (mm)": sum(d["rain_mm"] for d in days),
+                        "Index stresu": float(np.mean(list(valid[region["name"]].values())))})
+    coverage = sum(r["weight"] for r in configured if r["name"] in valid)
+    usable = coverage + 1e-9 >= WEATHER_RULES["min_coverage"]
+    fetched_at = min(timestamps) if timestamps else None
+    stress = (sum(r["weight"] * np.mean(list(valid[r["name"]].values()))
+                  for r in configured if r["name"] in valid) / coverage if coverage else None)
+    snapshot = {"crop": crop, "fetched_at": fetched_at, "regions": valid, "usable": usable}
+    revision, common_days = None, 0
+    if usable and previous and previous.get("usable") and previous.get("crop") == crop:
+        try:
+            age = (now - pd.Timestamp(previous["fetched_at"])).total_seconds() / 3600
+            newer = fetched_at > previous["fetched_at"]
+            names = [r for r in configured if r["name"] in valid and r["name"] in previous["regions"]]
+            joint_weight = sum(r["weight"] for r in names)
+            if names and joint_weight + 1e-9 >= WEATHER_RULES["min_coverage"] and newer and 0 <= age <= WEATHER_RULES["max_reference_age_hours"]:
+                dates = set.intersection(*[set(valid[r["name"]]) & set(previous["regions"][r["name"]]) for r in names])
+                common_days = len(dates)
+                if common_days >= WEATHER_RULES["min_common_days"]:
+                    revision = float(sum(r["weight"] * np.mean([
+                        valid[r["name"]][day] - previous["regions"][r["name"]][day]
+                        for day in sorted(dates)]) for r in names) / joint_weight)
+        except (KeyError, ValueError, TypeError):
+            pass
+    block = bool(revision is not None and revision <= WEATHER_RULES["revision_block"])
+    if not usable:
+        reason = "Nedostatek aktuálních předpovědí pro sledované oblasti; nový nákup je blokován."
+    elif revision is None:
+        reason = "Počasí je dostupné. Chybí srovnatelná starší předpověď; směr změny není potvrzen."
+    elif block:
+        reason = "Modelový stres plodin výrazně klesl. Možný tlak na cenu; konzervativní filtr blokuje nákup."
+    else:
+        reason = ("Modelový stres plodin roste; možné omezení nabídky." if revision > 0 else
+                  "Změna počasí nepřekročila práh blokace.")
+    return {"usable": usable, "fetched_at": fetched_at, "coverage": coverage, "stress": stress,
+            "revision": revision, "common_days": common_days, "entry_block": block or not usable,
+            "reason": reason, "summary": summary, "snapshot": snapshot, "raw_regions": regions}
+
+
+def prepare_crop_weather(crop, previous=None):
+    configured = CROP_REGIONS[crop]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {r["name"]: pool.submit(fetch_region_weather, r["lat"], r["lon"]) for r in configured}
+        regions = {name: future.result() for name, future in futures.items()}
+    return calculate_crop_weather(crop, regions, previous)
+
+
+def apply_weather_filter(entry, context):
+    r = dict(entry)
+    checks = dict(entry["entry_checks"])
+    checks["Počasí: aktuální a dostatečně úplná data"] = weather_is_current(context)
+    if context.get("revision") is not None:
+        checks["Počasí: bez výrazného zlepšení podmínek plodin"] = not context["entry_block"]
+    r.update(weather_context=context, entry_checks=checks,
+             buy_allowed=bool(entry["buy_allowed"] and all(checks.values())),
+             entry_score=round(100 * sum(checks.values()) / len(checks), 1))
+    if entry["buy_allowed"] and not r["buy_allowed"]:
+        r["signal"] = "NEVSTUPOVAT · POČASÍ"
+    r["entry_reason"] = entry["entry_reason"] + " Počasí: " + context.get("reason", "Chybí předpověď; nákup blokován.")
+    return r
+
+
+def render_crop_panel(item):
+    product = CROP_PRODUCTS[item["ticker"]]
+    st.markdown(f"#### 🌾 {product['name']} · {product['product']}")
+    st.caption("Cena jedné jednotky londýnského ETC v USD. Výnos ovlivňují futures, rolování a náklady produktu.")
+    st.link_button("Informace emitenta", product["source"])
+    context = item["weather_context"]
+    st.markdown("#### 🌦️ Počasí v pěstitelských oblastech")
+    st.write(context["reason"])
+    st.caption(f"Načteno: {context['fetched_at'] or 'nedostupné'} · "
+               f"pokrytí vah sledovaných bodů {context['coverage']:.0%} · model GFS ensemble, 14 kalendářních dní.")
+    st.caption("Předpověď nepokrývá vždy celou zvolenou dobu držení. Počasí i cenový plán je potřeba kontrolovat průběžně.")
+    c1, c2 = st.columns(2)
+    c1.metric("Modelový index stresu plodin", f"{context['stress']:.2f}" if context["stress"] is not None else "—")
+    c2.metric("Změna na shodných dnech", f"{context['revision']:+.2f}" if context["revision"] is not None else "—")
+    st.dataframe(pd.DataFrame(context["summary"]), hide_index=True, use_container_width=True)
+    st.caption("Index 0–1 není pravděpodobnost ztráty úrody ani růstu ceny. Body, váhy, měsíční citlivost a prahy "
+               "jsou neověřené modelové předpoklady. Nízké srážky nejsou měření sucha ani půdní vlhkosti. "
+               "Změna se porovnává jen na shodných budoucích dnech, alespoň 5, se snímkem do 72 hodin. "
+               "Starší snímky se uchovávají pouze v aktuální relaci. Počasí nemůže povolit technicky zamítnutý vstup.")
+    st.download_button("Stáhnout snímek počasí (JSON)", json.dumps(context, ensure_ascii=False, indent=2),
+                       file_name=f"pocasi_{item['ticker']}.json", mime="application/json", key=f"weather_{item['ticker']}")
+    st.markdown("**Další metriky k doplnění**")
+    st.markdown("- [USDA WASDE](https://www.usda.gov/oce/commodity/wasde): zásoby/spotřeba, výnosy a změny odhadů.\n"
+                "- [Crop Progress](https://www.nass.usda.gov/Publications/): kondice porostů a postup setí/sklizně.\n"
+                "- [Export Sales](https://apps.fas.usda.gov/esrquery/): poptávka a vývozní závazky.\n"
+                "- [CFTC COT](https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm): pozice fondů.\n"
+                "- Futures křivka a náklady rolování; spread a odchylka ceny ETC od hodnoty produktu.")
+    st.caption("Tyto další metriky se zatím automaticky nestahují a nevstupují do skóre.")
+
+
 # ---------------------- SCAN TICKERU --------------------------
-def scan_ticker(ticker: str, spy: pd.DataFrame):
+def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=None):
     data = download_history(ticker)
     if data.empty or len(data) < 60:
         return None
@@ -1521,11 +1787,19 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
     data_ok = 0 <= (today - last_day).days <= 4
     if spy.empty or pd.Timestamp(spy.index[-1]).date() != last_day:
         data_ok = False
-    entry = calculate_entry_engine(d, scores, regime, data_ok)
-    entry = apply_options_filter(entry, get_options_context(ticker, float(x["Close"]), float(x["ATR14"])))
+    entry = calculate_entry_engine(d, scores, regime, data_ok, mode)
+    if mode == "stocks":
+        entry = apply_options_filter(entry, get_options_context(ticker, float(x["Close"]), float(x["ATR14"])))
+    else:
+        entry.update(technical_buy_allowed=entry["buy_allowed"], options_context={
+            "usable": False, "entry_block": False, "put_call_oi": None, "fetched_at": None})
     entry = apply_seasonality_filter(entry, get_seasonality_context(
         ticker, last_day.isoformat(), STRATEGY["holding_days"]))
-    events = get_corporate_events(ticker)
+    if mode == "crops":
+        entry = apply_weather_filter(entry, weather_context or {})
+        if not entry["signal"].startswith("PLODINY ·"):
+            entry["signal"] = f"PLODINY · {STRATEGY['holding_days']}D · " + entry["signal"]
+    events = get_corporate_events(ticker) if mode == "stocks" else {}
     if events.get("last_dividend_amount") is None and "Dividends" in d:
         dividends = d.loc[d["Dividends"] > 0, "Dividends"]
         if not dividends.empty:
@@ -1536,6 +1810,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
 
     return {
         "ticker":       ticker,
+        "mode": mode, "holding_days": STRATEGY["holding_days"],
         "corporate_events": events,
         "name":         ticker,
         "sector":       "N/A",
@@ -1558,12 +1833,14 @@ def scan_ticker(ticker: str, spy: pd.DataFrame):
 
 
 # ---------------------- PARALELNÍ SCAN ------------------------
-def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progress_cb=None):
+def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progress_cb=None,
+                  mode="stocks", weather_contexts=None):
     results = []
     total = len(tickers)
     done = 0
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(scan_ticker, t, spy): t for t in tickers}
+        futures = {ex.submit(scan_ticker, t, spy, mode,
+                   (weather_contexts or {}).get(CROP_PRODUCTS[t]["crop"]) if mode == "crops" else None): t for t in tickers}
         for fut in as_completed(futures):
             t = futures[fut]
             try:
@@ -1582,12 +1859,41 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
 # =========================== UI =============================
 # ============================================================
 
-st.markdown("""
+mode_label = st.radio("Část aplikace", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
+mode = "crops" if mode_label == "Zemědělské komodity" else "stocks"
+if mode == "crops":
+    horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1, key="crop_horizon")
+else:
+    horizon = 5
+STRATEGY["holding_days"] = horizon
+BUY_SIGNAL = f"PLODINY · NÁKUPNÍ ZÓNA · 4.8 · {horizon}D" if mode == "crops" else "NÁKUPNÍ ZÓNA · 4.8"
+return_column = f"forward_return_{horizon}d"
+benchmark_label = "modelový koš pšenice/kukuřice/sóji" if mode == "crops" else "SPY"
+# Výsledky a historie každého režimu a horizontu mají vlastní stav relace.
+profile_key = f"{mode}_{horizon}"
+profiles = st.session_state.setdefault("scan_profiles", {})
+old_profile = st.session_state.get("active_profile")
+if old_profile != profile_key:
+    if old_profile:
+        profiles[old_profile] = {key: st.session_state.get(key) for key in
+                                 ("results", "regime", "regime_score", "history_df", "learning_df")}
+    restored = profiles.get(profile_key, {})
+    for key, default in {"results": [], "regime": None, "regime_score": 0,
+                         "history_df": None, "learning_df": None}.items():
+        st.session_state[key] = restored.get(key, default)
+    st.session_state.active_profile = profile_key
+
+hero_detail = ("Pšenice • Kukuřice • Sója • Sezónnost ETC • Počasí • Řízení rizika" if mode == "crops" else
+               "Technická analýza • Sezónnost každé akcie • Otevřené opční pozice • Dividendy • Výsledky • Řízení rizika")
+st.markdown(f"""
 <div class="hero">
-    <h3>📈 Spot Scanner 4.7</h3>
-    <p>Technická analýza • Sezónnost každé akcie • Otevřené opční pozice • Dividendy • Výsledky • Řízení rizika</p>
+    <h3>📈 Spot Scanner 4.8</h3>
+    <p>{hero_detail}</p>
 </div>
 """, unsafe_allow_html=True)
+st.caption(f"Signály z D1; maximální doba držení {horizon} obchodních dní od vstupu. "
+           "Pracovní postup: W1 pro širší trend, D1 pro signál, H4 pro zpřesnění vstupu. "
+           "W1/H4 aplikace automaticky nevyhodnocuje. Nejlepší horizont musí potvrdit testy po nákladech.")
 
 sb = get_supabase()
 
@@ -1595,14 +1901,19 @@ sb = get_supabase()
 with st.sidebar:
     st.header("⚙️ Nastavení")
 
-    custom = st.text_input("Přidat burzovní symbol (ticker)", "").upper().strip()
-    tickers = DEFAULT_TICKERS.copy()
-    if custom:
-        if is_valid_ticker(custom):
-            if custom not in tickers:
-                tickers.insert(0, custom)
-        else:
-            st.warning("Neplatný ticker (A–Z, 0–9, tečka, pomlčka; nejvýše 10 znaků).")
+    if mode == "stocks":
+        custom = st.text_input("Přidat burzovní symbol (ticker)", "").upper().strip()
+        tickers = DEFAULT_TICKERS.copy()
+        if custom:
+            if is_valid_ticker(custom):
+                if custom not in tickers:
+                    tickers.insert(0, custom)
+            else:
+                st.warning("Neplatný ticker (A–Z, 0–9, tečka, pomlčka; nejvýše 10 znaků).")
+    else:
+        tickers = st.multiselect("Plodiny – londýnská ETC v USD", list(CROP_PRODUCTS), default=list(CROP_PRODUCTS),
+                                format_func=lambda t: f"{CROP_PRODUCTS[t]['name']} · {t}")
+        st.caption("Cenová data patří ETC, nikoli fyzické plodině. Vybraný ticker musí být dostupný u vašeho brokera.")
 
     st.markdown("---")
     st.subheader("💰 Řízení rizika")
@@ -1614,7 +1925,7 @@ with st.sidebar:
     st.subheader("🔎 Filtry")
     min_quality        = st.slider("Minimální skóre kvality", 0, 100, 60)
     only_buy_zone      = st.checkbox("Pouze NÁKUPNÍ ZÓNA", False)
-    only_positive_rs   = st.checkbox("Pouze RS > S&P 500", False)
+    only_positive_rs   = st.checkbox("Pouze RS > srovnávací koš" if mode == "crops" else "Pouze RS > S&P 500", False)
     exclude_overbought = st.checkbox("Vyloučit RSI > 75", True)
     only_breakout = st.checkbox("Pouze cenové průrazy", False)
     only_squeeze = st.checkbox("Pouze zúžení Bollingerových pásem", False)
@@ -1624,26 +1935,34 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Zdroj dat: Yahoo Finance; pouze předchozí dokončené denní svíčky.")
     st.caption("Support: ≥2 oddělené testy. Vstup nejvýše 0,5 ATR a zároveň nejvýše 1,5 % nad ním. "
-               "R:R ≥1,5; horizont 5 obchodních dnů. Parametry v STRATEGY.")
-    st.caption("Opční filtr: dostatečný vzorek ≥5 000 OI; realizační cena CALL opce nejvýše 0,5 ATR nad cenou akcie, "
-               "≥1 000 OI a ≥20 % CALL OI dané expirace, expirace do 7 kalendářních dnů. "
-               "Jde o rizikové pravidlo, jehož účinnost nebyla ověřena. Chybějící opce se neberou jako potvrzení.")
+               f"R:R ≥1,5; horizont {horizon} obchodních dnů.")
+    if mode == "stocks":
+        st.caption("Opční filtr: vzorek ≥5 000 OI; blízká koncentrace CALL OI před expirací může blokovat nákup. "
+                   "Jde o neověřené rizikové pravidlo. Chybějící opce nejsou potvrzení.")
+    else:
+        st.caption("Počasí: Open-Meteo / GFS ensemble; 14 kalendářních dní, aktualizace mezipaměti za hodinu. "
+                   "Neúplné nebo staré počasí blokuje nový nákup. Výrazné snížení stresu na shodných dnech také. "
+                   "Modelové prahy nejsou ověřené obchodní parametry.")
+        st.caption("Relativní síla se porovnává s rovnoměrným košem všech 3 ETC. Kandidát je třetinou koše; "
+                   "nejde o nezávislý index. Režim koše je kontext, nikoli filtr SPY. "
+                   "Výchozí minimální medián obratu je 1 mil. USD denně.")
     st.caption("Sezónnost: stejné datum v posledních 10 uzavřených letech, horizont podle STRATEGY "
-               "(výchozí 5 obchodních dnů), nejméně 5 ročních vzorků. Opakovaně nepříznivé období "
-               "blokuje nový nákup. Příznivé období podporuje technicky a opčně povolený vstup. "
+               f"({horizon} obchodních dnů), nejméně 5 ročních vzorků. Opakovaně nepříznivé období "
+               "blokuje nový nákup. Příznivé období podporuje technicky povolený vstup. "
                "Chybějící historie se označí; sezónní filtr se tehdy nepoužije.")
     st.caption("Sezónní historie se uchovává v mezipaměti po dobu 24 hodin; první sken může trvat déle.")
-    st.caption("Dividendy a výsledky se načítají při skenu. Více požadavků může sken zpomalit.")
+    if mode == "stocks":
+        st.caption("Dividendy a výsledky se načítají při skenu. Více požadavků může sken zpomalit.")
     st.caption("Analytická pomůcka – ne automatický obchodní systém.")
 
 # ---------------------- TABS --------------------------------
 tab_scan, tab_history, tab_learning = st.tabs([
-    "🔎 Přehled akcií", "🗄️ Historie signálů", "🧠 Vyhodnocení signálů"
+    "🌾 Přehled plodin" if mode == "crops" else "🔎 Přehled akcií", "🗄️ Historie signálů", "🧠 Vyhodnocení signálů"
 ])
 
 if "results" not in st.session_state:
     st.session_state.results = []
-elif st.session_state.results and st.session_state.results[0].get("strategy_version") != "4.7":
+elif st.session_state.results and st.session_state.results[0].get("strategy_version") != "4.8":
     st.session_state.results = []
 if "regime" not in st.session_state:
     st.session_state.regime = None
@@ -1658,21 +1977,35 @@ with tab_scan:
     with col_a:
         st.subheader("Tržní sken")
     with col_b:
-        run = st.button("🚀 SPUSTIT SKEN AKCIÍ", type="primary", use_container_width=True)
+        run = st.button("🌾 SPUSTIT SKEN PLODIN" if mode == "crops" else "🚀 SPUSTIT SKEN AKCIÍ",
+                        type="primary", use_container_width=True, disabled=not tickers)
 
     if run:
-        progress_bar = st.progress(0.0, text="Analyzuji akcie…")
+        progress_bar = st.progress(0.0, text="Načítám ceny a počasí…" if mode == "crops" else "Analyzuji akcie…")
 
         def update_progress(done, total):
             progress_bar.progress(done / max(total, 1),
                                   text=f"Analyzuji {done}/{total}")
 
-        spy = get_spy()
+        spy = get_crop_benchmark() if mode == "crops" else get_spy()
+        weather_contexts = {}
+        if mode == "crops":
+            weather_records = st.session_state.setdefault("weather_records", {})
+            for crop in sorted({CROP_PRODUCTS[t]["crop"] for t in tickers}):
+                saved_weather = weather_records.get(crop, {})
+                latest = saved_weather.get("latest")
+                ctx = prepare_crop_weather(crop, latest)
+                if latest and ctx["fetched_at"] == latest.get("fetched_at"):
+                    ctx = calculate_crop_weather(crop, ctx["raw_regions"], saved_weather.get("reference"))
+                elif ctx["usable"]:
+                    weather_records[crop] = {"latest": ctx["snapshot"], "reference": latest}
+                weather_contexts[crop] = ctx
         regime, regime_score = market_regime(spy)
         st.session_state.regime = regime
         st.session_state.regime_score = regime_score
 
-        raw = parallel_scan(tickers, spy, max_workers=max_workers, progress_cb=update_progress)
+        raw = parallel_scan(tickers, spy, max_workers=max_workers, progress_cb=update_progress,
+                            mode=mode, weather_contexts=weather_contexts)
         progress_bar.empty()
 
         results = []
@@ -1688,6 +2021,11 @@ with tab_scan:
 
         results.sort(key=lambda z: (z["entry_score"], z["quality_score"]), reverse=True)
         st.session_state.results = results
+        skipped = len(tickers) - len(raw)
+        if skipped:
+            st.warning(f"Počet instrumentů bez dostatečných cenových dat nebo s chybou skenu: {skipped}.")
+        if spy.empty:
+            st.warning("Srovnávací data nejsou dostupná; nový vstup je blokován.")
 
         saved = save_signals_bulk(sb, results)
         if saved:
@@ -1697,7 +2035,7 @@ with tab_scan:
     if st.session_state.regime:
         color = {"BULLISH": "🟢", "BEARISH": "🔴",
                  "NEUTRAL": "🟡", "UNKNOWN": "⚪"}.get(st.session_state.regime, "⚪")
-        st.info(f"{color} **Tržní režim (SPY):** {st.session_state.regime} — "
+        st.info(f"{color} **Tržní režim ({benchmark_label}):** {st.session_state.regime} — "
                 f"skóre {st.session_state.regime_score}/5")
 
     results = st.session_state.results
@@ -1708,16 +2046,16 @@ with tab_scan:
         avg_entry   = np.mean([r["entry_score"]   for r in results])
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Analyzované akcie",   len(results))
+        c1.metric("Analyzované plodiny" if mode == "crops" else "Analyzované akcie", len(results))
         c2.metric("NÁKUPNÍ ZÓNA",    buy_count)
         c3.metric("Průměrné skóre kvality",  f"{avg_quality:.1f}")
         c4.metric("Průměrné vstupní skóre",    f"{avg_entry:.1f}")
 
         rows = []
         for r in results:
-            assessment = assess_trade_action(r, held=st.session_state.get(f"held_{r['ticker']}", False),
-                                            position_stop=st.session_state.get(f"held_stop_{r['ticker']}"),
-                                            position_target=st.session_state.get(f"held_target_{r['ticker']}"))
+            assessment = assess_trade_action(r, held=st.session_state.get(f"held_{mode}_{r['ticker']}", False),
+                                            position_stop=st.session_state.get(f"held_stop_{mode}_{r['ticker']}"),
+                                            position_target=st.session_state.get(f"held_target_{mode}_{r['ticker']}"))
             rows.append({
                 "Ticker":   r["ticker"],
                 "Cena":     round(r["price"], 2),
@@ -1777,7 +2115,18 @@ with tab_scan:
                 "Výsledky do": r["corporate_events"].get("earnings_end"),
                 "Dny do nejbližšího termínu výsledků": days_until(r["corporate_events"].get("earnings_start")),
             })
+            if mode == "crops":
+                rows[-1].update({"Plodina": CROP_PRODUCTS[r["ticker"]]["name"],
+                    "Počasí použitelné": r["weather_context"]["usable"],
+                    "Počasí blokuje": r["weather_context"]["entry_block"],
+                    "Index stresu plodin": r["weather_context"]["stress"],
+                    "Změna stresu na shodných dnech": r["weather_context"]["revision"],
+                    "Počasí načteno": r["weather_context"]["fetched_at"],
+                    "Pokrytí modelových vah počasí": r["weather_context"]["coverage"]})
         df_show = pd.DataFrame(rows)
+        if mode == "crops":
+            df_show = df_show.drop(columns=[c for c in df_show if any(fragment in c for fragment in
+                ("opční", "Opční", "PUT/CALL", "dividenda", "dividendy", "dividend", "Výsledky", "výsledků"))])
         st.dataframe(df_show, use_container_width=True, hide_index=True)
 
         st.download_button(
@@ -1792,23 +2141,23 @@ with tab_scan:
 
         for item in results:
             ticker = item["ticker"]
-            assessment = assess_trade_action(item, held=st.session_state.get(f"held_{ticker}", False),
-                                             position_stop=st.session_state.get(f"held_stop_{ticker}"),
-                                             position_target=st.session_state.get(f"held_target_{ticker}"))
+            assessment = assess_trade_action(item, held=st.session_state.get(f"held_{mode}_{ticker}", False),
+                                             position_stop=st.session_state.get(f"held_stop_{mode}_{ticker}"),
+                                             position_target=st.session_state.get(f"held_target_{mode}_{ticker}"))
             with st.expander(
                 f"{ticker} · {assessment['action_label']} · trend {assessment['trend_label']} · "
                 f"{item['signal']}",
                 expanded=False,
             ):
                 st.subheader(f"{ticker} · {item['signal']}")
-                held = st.checkbox("Tuto akcii již držím — vyhodnotit stávající nákupní pozici", key=f"held_{ticker}")
+                held = st.checkbox("Tento instrument již držím — vyhodnotit stávající nákupní pozici", key=f"held_{mode}_{ticker}")
                 own_stop, own_target = None, None
                 if held:
                     ps, pt = st.columns(2)
                     own_stop = ps.number_input("Vlastní stop pozice (0 = nezadán)", min_value=0.0,
-                                               value=0.0, step=0.01, key=f"held_stop_{ticker}")
+                                               value=0.0, step=0.01, key=f"held_stop_{mode}_{ticker}")
                     own_target = pt.number_input("Vlastní cíl pozice (0 = nezadán)", min_value=0.0,
-                                                 value=0.0, step=0.01, key=f"held_target_{ticker}")
+                                                 value=0.0, step=0.01, key=f"held_target_{mode}_{ticker}")
                     st.caption("Stop/cíl zadejte ve stejné měně a cenovém základu jako zobrazená cena. "
                                "Hodnocení porovnává závěrečnou cenu, nikoli dosažení úrovně pokynu během dne. "
                                "Nastavení pozice a ručně zadané údaje platí po dobu aktuální relace aplikace.")
@@ -1841,8 +2190,11 @@ with tab_scan:
                     {"Podmínka": label, "Splněna": ok}
                     for label, ok in item["entry_checks"].items()
                 ]), hide_index=True, use_container_width=True)
-                render_events_panel(ticker, item["corporate_events"])
-                render_options_panel(item["options_context"])
+                if mode == "crops":
+                    render_crop_panel(item)
+                else:
+                    render_events_panel(ticker, item["corporate_events"])
+                    render_options_panel(item["options_context"])
                 render_seasonality_panel(ticker, item["seasonality_context"])
                 st.markdown("#### 🧭 Struktura trhu")
                 st.write(f"**{item['structure_trend']}** · {item['structure_event']}")
@@ -1852,9 +2204,9 @@ with tab_scan:
                 )
 
                 # Síťové doplňky se načítají jen po kliknutí v konkrétní ticker záložce.
-                if st.button("Načíst název, cenu před otevřením trhu a zprávy", key=f"load_context_{ticker}"):
+                if mode == "stocks" and st.button("Načíst název, cenu před otevřením trhu a zprávy", key=f"load_context_{ticker}"):
                     st.session_state[f"context_loaded_{ticker}"] = True
-                if st.session_state.get(f"context_loaded_{ticker}", False):
+                if mode == "stocks" and st.session_state.get(f"context_loaded_{ticker}", False):
                     name, sector = basic_info(ticker)
                     pre_price, pre_change = premarket(ticker)
                     st.markdown(f"**{name}** · Sektor: {sector}")
@@ -1892,7 +2244,7 @@ with tab_scan:
                 k3.metric("Trend", f"{item['trend_score']:.1f}/100")
                 k4.metric("Síla pohybu", f"{item['momentum_score']:.1f}/100")
                 k5, k6, k7, k8 = st.columns(4)
-                k5.metric("Relativní síla vůči SPY (30 dnů)", f"{item['rs_30d']:+.2f} %")
+                k5.metric("Relativní síla vůči koši (30 dnů)" if mode == "crops" else "Relativní síla vůči SPY (30 dnů)", f"{item['rs_30d']:+.2f} %")
                 k6.metric("RSI (14)", f"{item['rsi']:.1f}")
                 k7.metric("ATR", f"${item['atr']:.2f} ({item['atr_pct']:.2f} %)")
                 k8.metric("Objem vůči průměru", f"{item['volume_ratio']:.2f}×")
@@ -1911,11 +2263,10 @@ with tab_scan:
                          f"TP1 ${item['target1']:.2f}; úroveň +1R ${item['one_r_price']:.2f}; "
                          f"časový výstup nejpozději na konci {STRATEGY['holding_days']}. obchodního dne včetně vstupního.")
                 st.caption("+1R je orientační milník, ne automatický přesun stopu. "
-                           "Před objednávkou ověřte aktuálnost kalendáře a opčních dat, zprávy, spread a graf. "
-                           "Kalendář se načítá automaticky; aplikace pokyny neprovádí.")
+                           "Před objednávkou ověřte aktuálnost dat, zprávy, spread a graf. Aplikace pokyny neprovádí.")
                 proposed = st.number_input("Zkušební vstupní cena (ručně, není živá kotace)",
                                            min_value=0.01, value=max(0.01, float(item["price"])),
-                                           step=0.01, format="%.4f", key=f"proposed_{ticker}")
+                                           step=0.01, format="%.4f", key=f"proposed_{mode}_{ticker}")
                 price_ok, proposed_rr = check_execution_price(item, proposed)
                 st.write(f"R:R při této ceně, se stejným stopem a TP1: {proposed_rr:.2f}")
                 if price_ok:
@@ -1930,9 +2281,9 @@ with tab_scan:
                 if not price_ok:
                     shares, value, per_share = 0, 0.0, 0.0
                 p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Počet akcií – zkušební cena", shares)
+                p1.metric("Počet jednotek ETC – zkušební cena" if mode == "crops" else "Počet akcií – zkušební cena", shares)
                 p2.metric("Hodnota pozice", f"${value:,.2f}")
-                p3.metric("Riziko na akcii", f"${per_share:,.2f}")
+                p3.metric("Riziko na jednotku", f"${per_share:,.2f}")
                 p4.metric("Riziko pozice", f"${shares * per_share:,.2f}")
                 st.caption(
                     "Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové mezery. "
@@ -2026,6 +2377,10 @@ with tab_history:
         if st.button("🔄 Načíst historii", key="load_history"):
             try:
                 q = sb.table("scanner_signals").select("*").order("signal_date", desc=True)
+                if mode == "crops":
+                    q = q.like("signal", "PLODINY ·%").like("signal", f"%{horizon}D%")
+                else:
+                    q = q.not_.like("signal", "PLODINY ·%")
                 if only_today:
                     today = datetime.now(timezone.utc).date().isoformat()
                     q = q.eq("signal_date", today)
@@ -2053,11 +2408,15 @@ with tab_history:
 # ============================================================
 with tab_learning:
     st.subheader("Vyhodnocení historických signálů")
-    st.caption("Pouze uložené nákupní signály 4.7 po sezónním filtru; simulace neobnovuje historické záznamy opčních dat "
-               "ani sezónní vzorky. Výstupní pravidla pro držené pozice se zde netestují. Model: vstup při otevření příští seance v nákupní zóně, "
-               "kontrola R:R, výstup do 5 dnů. "
+    st.caption(f"Pouze uložené nákupní signály 4.8 pro aktuální část a horizont {horizon} dní. "
+               "Simulace neobnovuje historické počasí, opční data ani sezónní vzorky. "
+               "Výstupní pravidla pro držené pozice se zde netestují. Model: vstup při otevření příští seance v nákupní zóně, "
+               f"kontrola R:R, výstup do {horizon} obchodních dní. "
                "Jde o simulaci bez nákladů, nikoli ověření ziskovosti. Denní OHLC data nemusí určit "
                "pořadí zásahu stopu a cíle v rámci stejného dne.")
+    if mode == "crops":
+        st.caption("Stávající databáze ukládá jeden záznam na ticker a signální den. Nový sken přepíše předchozí "
+                   "záznam tohoto dne, i při změně horizontu. Podrobnosti počasí uchovejte pomocí JSON a CSV.")
 
     if sb is None:
         st.info("Vyhodnocení signálů vyžaduje připojení k databázi Supabase.")
@@ -2087,10 +2446,10 @@ with tab_learning:
                 c1.metric("TP1", tp1)
                 c2.metric("SL", sl)
                 c3.metric("Nejasné pořadí výstupů", amb)
-                c4.metric("Výstup 5. den", opn)
+                c4.metric(f"Výstup {horizon}. den", opn)
                 c5.metric("Vstup nebyl uskutečněn", not_filled)
                 if pend:
-                    st.caption(f"Počet signálů čekajících na dokončení 5 obchodních dnů: {pend}.")
+                    st.caption(f"Počet signálů čekajících na dokončení {horizon} obchodních dní: {pend}.")
 
                 resolved = tp1 + sl
                 if resolved > 0:
@@ -2100,17 +2459,17 @@ with tab_learning:
                               help=f"Počet vyhodnocených obchodů: {resolved}")
 
                 # Průměrný forward return podle outcome
-                valid = learning.dropna(subset=["forward_return_5d"])
+                valid = learning.dropna(subset=[return_column])
                 if not valid.empty:
-                    st.markdown("#### Průměrný výnos (výstup nejpozději 5. den) podle výsledku")
-                    agg = valid.groupby("outcome")["forward_return_5d"].agg(
+                    st.markdown(f"#### Průměrný výnos (výstup nejpozději {horizon}. den) podle výsledku")
+                    agg = valid.groupby("outcome")[return_column].agg(
                         ["count", "mean"]).round(2)
                     st.dataframe(agg, use_container_width=True)
 
                 # Průměrný return podle signálu
                 if not valid.empty:
-                    st.markdown("#### Průměrný výnos (výstup nejpozději 5. den) podle typu signálu")
-                    agg2 = valid.groupby("signal")["forward_return_5d"].agg(
+                    st.markdown(f"#### Průměrný výnos (výstup nejpozději {horizon}. den) podle typu signálu")
+                    agg2 = valid.groupby("signal")[return_column].agg(
                         ["count", "mean"]).round(2)
                     st.dataframe(agg2, use_container_width=True)
 

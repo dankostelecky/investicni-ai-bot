@@ -1,4 +1,4 @@
-# VERZE: AKCIE + ZEMEDELSKE KOMODITY | 2026-10-15-R3
+# VERZE: AKCIE + ZEMEDELSKE KOMODITY | 2026-10-15-R4
 """Klondike Spot Scanner — přehledná edice pro akcie a zemědělské komodity.
 
 Spuštění: streamlit run app.py
@@ -1539,17 +1539,25 @@ def buy_signal(mode="stocks", holding_days=5):
     return f"PLODINY · NÁKUPNÍ ZÓNA · 4.8 · {holding_days}D" if mode == "crops" else BUY_SIGNAL
 
 
+class ScanDataError(ValueError):
+    """Předvídatelný problém s daty, jehož důvod se zobrazí u instrumentu."""
+
+
 def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=None, holding_days=5):
     data = download_history(ticker)
-    if data.empty or len(data) < 60:
-        return None
+    if data.empty:
+        raise ScanDataError("Yahoo Finance neposkytlo použitelnou cenovou historii. Může jít o dočasnou nedostupnost nebo omezení počtu požadavků. Zkuste sken později zopakovat.")
+    if len(data) < 60:
+        raise ScanDataError(f"Pro výpočet je potřeba alespoň 60 dokončených seancí. Dostupných seancí: {len(data)}.")
 
     d = add_indicators(data)
     x = d.iloc[-1]
 
-    required = ["EMA20", "EMA50", "EMA200", "RSI14", "ATR14", "VOL_RATIO"]
-    if any(pd.isna(x[k]) for k in required):
-        return None
+    # Neznámý objem nezahazuje cenový graf. Podmínky likvidity níže nákup blokují.
+    required = ["EMA20", "EMA50", "EMA200", "RSI14", "ATR14"]
+    missing = [key for key in required if not np.isfinite(safe_float(x[key]))]
+    if missing:
+        raise ScanDataError("Nelze vypočítat cenové ukazatele: " + ", ".join(missing) + ".")
 
     scores = calculate_scores(d, spy)
     regime, _ = market_regime(spy)
@@ -1601,8 +1609,9 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
 
 # ---------------------- PARALELNÍ SCAN ------------------------
 def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progress_cb=None,
-                  mode="stocks", weather_contexts=None, holding_days=5):
+                  mode="stocks", weather_contexts=None, holding_days=5, diagnostics=None):
     results = []
+    diagnostics = diagnostics if diagnostics is not None else {}
     total = len(tickers)
     done = 0
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -1615,8 +1624,14 @@ def parallel_scan(tickers: list, spy: pd.DataFrame, max_workers: int = 4, progre
                 r = fut.result()
                 if r is not None:
                     results.append(r)
-            except Exception as e:
-                log.warning(f"Scan {t} selhal: {e}")
+                else:
+                    diagnostics[t] = "Analýza neposkytla výsledek. Zopakujte sken."
+            except ScanDataError as exc:
+                diagnostics[t] = str(exc)
+                log.warning("Data %s: %s", t, exc)
+            except Exception:
+                diagnostics[t] = "Analýzu se nepodařilo dokončit. Cenová data nebo některý výpočet nejsou dostupné. Zopakujte sken."
+                log.exception("Sken %s selhal", t)
             done += 1
             if progress_cb:
                 progress_cb(done, total)
@@ -1872,7 +1887,9 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
     k5.metric("Relativní síla vůči koši ETC (30 seancí)" if mode == "crops" else "Relativní síla vůči SPY (30 seancí)", f"{display_number(item['rs_30d'], 2, sign=True)} %")
     k6.metric("RSI (14)", f"{display_number(item['rsi'], 1)}")
     k7.metric("ATR", f"{display_number(item['atr'], 2, currency=True)} ({display_number(item['atr_pct'], 2)} %)")
-    k8.metric("Objem vůči průměru", f"{display_number(item['volume_ratio'], 2)}×")
+    k8.metric("Objem vůči průměru", f"{display_number(item['volume_ratio'], 2)}×" if np.isfinite(item["volume_ratio"]) else "Nedostupné")
+    if not np.isfinite(item["volume_ratio"]):
+        st.warning("Objemová data nejsou dostatečná pro výpočet poměru objemů. Podmínky likvidity nadále blokují nový nákup.")
 
     g1, g2 = st.columns(2)
     g1.metric("Prostor k 20dennímu maximu na 1 USD", f"{display_number(item['gain_per_dollar'], 3, currency=True)}")
@@ -2100,7 +2117,7 @@ def render_learning(sb, mode="stocks", holding_days=5):
 PROFILE_DEFAULTS = {
     "results": [], "regime": None, "regime_score": 0, "scan_has_run": False,
     "scan_total": 0, "scan_finished": "—", "save_status": "",
-    "history_df": None, "learning_df": None,
+    "history_df": None, "learning_df": None, "scan_diagnostics": {}, "scanned_tickers": [],
 }
 
 
@@ -2138,11 +2155,53 @@ def scan_weather_contexts(tickers, progress=None):
     return contexts
 
 
+def filter_exclusion_reasons(item, high_gain, outperforming, safe_earnings):
+    reasons = []
+    if high_gain and safe_float(item.get("gain_per_dollar"), -1) < 0.06 - 1e-12:
+        reasons.append("Prostor k 20dennímu maximu nedosahuje 6 % nebo jej nelze vypočítat.")
+    if outperforming and safe_float(item.get("rs_30d"), 0) <= 0:
+        reasons.append("Instrument nepřekonává srovnávací koš za posledních 30 seancí.")
+    if safe_earnings and earnings_in_window(item.get("corporate_events", {})):
+        reasons.append("Zveřejnění výsledků spadá do příštích 7 dnů.")
+    return reasons
+
+
+def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
+                       high_gain=False, outperforming=False, safe_earnings=False):
+    """Vybrané plodiny mají panel i při chybě dat nebo nesplnění filtru."""
+    known = {item["ticker"]: item for item in raw}
+    visible = {item["ticker"]: item for item in results}
+    panel_tickers = tickers if mode == "crops" else list(visible)
+    for ticker in panel_tickers:
+        label = f"{CROP_PRODUCTS[ticker]['name']} · {ticker}" if mode == "crops" else ticker
+        item = visible.get(ticker)
+        if item is None:
+            filtered = known.get(ticker)
+            state = "Nesplňuje filtry" if filtered is not None else "Analýza není dostupná"
+            with st.expander(f"{label} · {state}", expanded=False):
+                if filtered is not None:
+                    for reason in filter_exclusion_reasons(filtered, high_gain, outperforming, safe_earnings):
+                        st.info(reason)
+                    st.caption("Pro zobrazení úplné analýzy vypněte příslušný filtr. Filtry nemění technická pravidla nákupu.")
+                else:
+                    scanned = st.session_state.get("scanned_tickers", [])
+                    message = (st.session_state.get("scan_diagnostics", {}).get(ticker)
+                               if ticker in scanned else "Tato plodina nebyla zahrnuta do posledního skenu. Spusťte nový sken.")
+                    st.warning(message or "Pro tento instrument nejsou dostupná použitelná data. Zopakujte sken.")
+                    st.caption("Bez úplné analýzy se nevytváří nákupní signál a instrument se neukládá do databáze.")
+            continue
+        assessment = assess_trade_action(item, held=st.session_state.get(f"held_{mode}_{ticker}", False),
+            position_stop=st.session_state.get(f"held_stop_{mode}_{ticker}"),
+            position_target=st.session_state.get(f"held_target_{mode}_{ticker}"))
+        with st.expander(f"{label} · {assessment['action_label']} · trend {assessment['trend_label']} · {display_number(item['price'], 2, currency=True)}", expanded=False):
+            render_instrument(item, capital, risk_pct, max_position_pct)
+
+
 def main():
     st.set_page_config(page_title="Klondike · Akcie a zemědělské komodity", page_icon="📈", layout="wide",
                        initial_sidebar_state="expanded")
     apply_design()
-    st.caption("Verze 2026-10-15-R3 · Akcie + zemědělské komodity")
+    st.caption("Verze 2026-10-15-R4 · Akcie + zemědělské komodity")
     mode_label = st.radio("Část aplikace", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
     mode = "crops" if mode_label == "Zemědělské komodity" else "stocks"
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
@@ -2174,6 +2233,7 @@ def main():
                                     default=list(CROP_PRODUCTS), key="crop_tickers",
                                     format_func=lambda t: f"{CROP_PRODUCTS[t]['name']} · {t}")
             st.caption("Ceny patří burzovním produktům ETC navázaným na futures, nikoli fyzickým plodinám.")
+            st.caption("Panel každé vybrané plodiny zůstává viditelný i při chybě dat nebo nesplnění filtru a vysvětlí důvod.")
         st.divider()
         st.subheader("Filtry zobrazení")
         high_gain = st.toggle("Zisk / 1 USD ≥ 0,06 USD", value=mode == "stocks", key=f"filter_high_gain_{mode}",
@@ -2212,11 +2272,13 @@ def main():
                 spy = get_crop_benchmark() if mode == "crops" else get_spy()
                 weather_contexts = scan_weather_contexts(tickers, progress) if mode == "crops" else {}
                 regime, score = market_regime(spy)
+                diagnostics = {}
                 raw = parallel_scan(tickers, spy, max_workers=4, progress_cb=update_progress,
-                                    mode=mode, weather_contexts=weather_contexts, holding_days=horizon)
+                                    mode=mode, weather_contexts=weather_contexts, holding_days=horizon,
+                                    diagnostics=diagnostics)
                 raw.sort(key=lambda item: (item["entry_score"], item["quality_score"]), reverse=True)
                 st.session_state.update(results=raw, regime=regime, regime_score=score, scan_has_run=True,
-                                        scan_total=len(tickers), scan_finished=datetime.now(ZoneInfo("Europe/Prague")).strftime("%d. %m. %Y %H:%M"))
+                                        scan_total=len(tickers), scan_diagnostics=diagnostics, scanned_tickers=list(tickers), scan_finished=datetime.now(ZoneInfo("Europe/Prague")).strftime("%d. %m. %Y %H:%M"))
                 visible = filter_results(raw, high_gain, outperforming, safe_earnings)
                 # Jeden zápis na explicitní sken; změny widgetů zápis neopakují.
                 saved = save_signals_bulk(sb, visible)
@@ -2255,18 +2317,19 @@ def main():
             if skipped:
                 st.caption(f"Počet instrumentů bez dostatečných cenových dat nebo s chybou: {skipped}.")
             if not results:
-                st.info("Aktivním filtrům nevyhovuje žádný instrument. Pro širší přehled vypněte některý filtr.")
-            else:
+                if raw:
+                    st.info("Aktivním filtrům nevyhovuje žádný instrument. Pro širší přehled vypněte některý filtr.")
+                else:
+                    st.warning("Pro vybrané instrumenty se nepodařilo dokončit analýzu. Podrobnosti najdete v jejich panelech.")
+            if results or mode == "crops":
                 st.markdown("### Podrobnosti jednotlivých plodin" if mode == "crops" else "### Podrobnosti jednotlivých akcií")
-                st.caption("Rozbalením panelu zobrazíte metriky, obchodní plán a grafy.")
-                for item in results:
-                    ticker = item["ticker"]
-                    assessment = assess_trade_action(item, held=st.session_state.get(f"held_{mode}_{ticker}", False),
-                        position_stop=st.session_state.get(f"held_stop_{mode}_{ticker}"),
-                        position_target=st.session_state.get(f"held_target_{mode}_{ticker}"))
-                    label = f"{CROP_PRODUCTS[ticker]['name']} · {ticker}" if mode == "crops" else ticker
-                    with st.expander(f"{label} · {assessment['action_label']} · trend {assessment['trend_label']} · {display_number(item['price'], 2, currency=True)}", expanded=False):
-                        render_instrument(item, capital, risk_pct, max_position_pct)
+                st.caption("Rozbalením panelu zobrazíte analýzu nebo důvod její nedostupnosti.")
+                render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
+                                   high_gain, outperforming, safe_earnings)
+            if mode == "stocks" and st.session_state.get("scan_diagnostics"):
+                with st.expander("Instrumenty s neúplnými daty", expanded=False):
+                    for ticker, reason in st.session_state.scan_diagnostics.items():
+                        st.write(f"**{ticker}**: {reason}")
         else:
             st.info("Spusťte sken. Výsledky se zobrazí v rozbalovacích panelech jednotlivých instrumentů.")
     with tab_history:

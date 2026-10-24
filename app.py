@@ -3,7 +3,7 @@
 
 Spuštění: streamlit run app.py
 Analytické jádro 4.8 a Supabase scanner_signals zůstávají kompatibilní.
-Osobní obchodní strategie zatím není implementována.
+Osobní rozhodovací filtr, bezpečné snímky signálů a adaptivní učení.
 """
 
 import json
@@ -24,15 +24,26 @@ import streamlit as st
 import yfinance as yf
 from plotly.subplots import make_subplots
 from supabase import create_client
+from adaptive_core import (LEARNING_MODEL_VERSION, TRAINING_COST_PCT,
+                           outcome_from_bars, learned_adjustment, bucket_features)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("klondike")
 
-DEFAULT_TICKERS = [
-    "VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT", "AMZN",
-    "META", "TSLA", "BRK-B", "WMT", "MU", "JPM", "ORCL", "XOM", "AMD", "JNJ",
-    "COST", "HD", "UNH", "BAC", "IBM", "INTC", "BABA",
-]
+# USA-listed USD stocks. Mid-cap membership and liquidity vary over time:
+# hard liquidity/price checks are performed on every scan, never assumed.
+STOCK_GROUPS = {
+    "Základní výběr": ["VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT",
+                       "AMZN", "META", "TSLA", "BRK-B", "WMT", "MU", "JPM", "ORCL",
+                       "XOM", "AMD", "JNJ", "COST", "HD", "UNH", "BAC", "IBM", "INTC", "BABA"],
+    "Banky": ["WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "FITB", "KEY"],
+    "Pojišťovny": ["PGR", "CB", "TRV", "ALL", "AIG", "HIG", "MET", "PRU"],
+    "Těžaři a suroviny": ["NEM", "AEM", "KGC", "WPM", "FCX", "SCCO", "TECK", "RIO", "VALE"],
+    "Distributoři": ["GWW", "WCC", "FAST", "POOL", "SYY", "RS"],
+    "Likvidní střední společnosti – kandidáti": ["CROX", "FIVE", "DOCU", "GTLS", "ON", "FLEX", "CELH", "ELF"],
+}
+DEFAULT_TICKERS = list(dict.fromkeys(STOCK_GROUPS["Základní výběr"] +
+    ["PGR", "CB", "NEM", "FCX", "GWW", "WCC", "CROX", "FLEX"]))
 TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
 
 # Londýnské USD kotace, ověřené podle seznamu emitenta WisdomTree.
@@ -146,27 +157,98 @@ def basic_info(ticker: str):
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def premarket(ticker: str):
+@st.cache_data(ttl=150, show_spinner=False)
+def extended_market_quote(ticker: str, latest_daily_date=None):
+    """Recent regular/pre/post 5m Yahoo bars. A stale/unknown quote is NEVER live.
+
+    The intraday auto-adjust convention matches adjusted daily OHLC used by the
+    strategy; Yahoo's intraday and daily corrections may still differ.
+    """
     try:
-        obj = yf.Ticker(ticker)
-        fast = obj.fast_info
-        pre, prev = None, None
-        try:
-            pre = fast.get("pre_market_price")
-            prev = fast.get("previous_close") or fast.get("regular_market_previous_close")
-        except Exception:
-            pass
-        if pre is None or prev is None:
-            info = obj.info
-            pre = info.get("preMarketPrice")
-            prev = info.get("previousClose")
-        pre = safe_float(pre, None)
-        prev = safe_float(prev, None)
-        if pre is not None and prev is not None and pre > 0 and prev > 0:
-            return pre, (pre / prev - 1) * 100
-    except Exception:
-        pass
-    return None, None
+        bars = yf.Ticker(ticker).history(period="5d", interval="5m", prepost=True,
+                                        auto_adjust=True)
+        if bars is None or bars.empty or "Close" not in bars:
+            return None
+        bars = bars.dropna(subset=["Close"])
+        if "Volume" in bars:
+            bars = bars.loc[pd.to_numeric(bars["Volume"], errors="coerce").fillna(0) > 0]
+        if bars.empty:
+            return None
+        last = bars.iloc[-1]
+        stamp = pd.Timestamp(bars.index[-1])
+        if stamp.tzinfo is None:
+            return None  # exchange timezone missing; refuse ambiguous quote
+        eastern = stamp.tz_convert("America/New_York")
+        minute = eastern.hour * 60 + eastern.minute
+        if 4*60 <= minute < 9*60+30:
+            kind = "PRE"
+        elif 9*60+30 <= minute < 16*60:
+            kind = "REG"
+        elif 16*60 <= minute < 20*60:
+            kind = "POST"
+        else:
+            return None
+        now = pd.Timestamp.now(tz="UTC")
+        age_hours = (now - stamp.tz_convert("UTC")).total_seconds() / 3600
+        # At most 3 days for weekends/US market holidays, otherwise <= 20h.
+        weekend = now.weekday() in (5, 6) or eastern.weekday() in (5, 6)
+        allowed_age = 72 if weekend else 20
+        price = safe_float(last["Close"], None)
+        if price is None or price <= 0 or not (0 <= age_hours <= allowed_age):
+            return None
+        daily_date = pd.Timestamp(latest_daily_date).date() if latest_daily_date is not None else None
+        if daily_date is not None and eastern.date() < daily_date:
+            return None
+        # For a completed daily bar of the same calendar date, only POST adds
+        # new information. Otherwise the daily bar is the more reliable source.
+        if daily_date == eastern.date() and kind != "POST":
+            return None
+        return {"price": price, "kind": kind, "asof": stamp.isoformat(),
+                "age_hours": age_hours}
+    except Exception as exc:
+        log.info("Mimoburzovní data %s nedostupná: %s", ticker, exc)
+        return None
+
+
+def personal_style_score(item):
+    """Transparent preference match. NOT a probability of profit or a buy signal."""
+    d = item.get("data")
+    score = 0
+    distance = safe_float(item.get("support_distance_atr"))
+    if np.isfinite(distance):
+        score += 30 if 0 <= distance <= .5 else (17 if 0 <= distance <= 1. else 0)
+    if int(item.get("support_touches") or 0) >= 2:
+        score += 20
+    if isinstance(d, pd.DataFrame) and len(d) >= 12:
+        prior = safe_float(d["Close"].iloc[-12])
+        now = safe_float(d["Close"].iloc[-1])
+        if prior > 0 and now / prior - 1 <= -.03:
+            score += 15  # pullback favored, but not sufficient for buying
+        c = d.iloc[-1]
+        span = safe_float(c["High"]) - safe_float(c["Low"])
+        if span > 0 and (safe_float(c["Close"]) - safe_float(c["Low"])) / span >= .6:
+            score += 15
+    if safe_float(item.get("volume_ratio"), 0) >= 1.2:
+        score += 10
+    if item.get("quiet_pullback"):
+        score += 10
+    return min(score, 100)
+
+
+def risk_quote_context(item):
+    """Independent current-price sanity check; never replaces completed-bar setup."""
+    value = safe_float(item.get("effective_price"), item["price"])
+    lower = safe_float(item.get("min_execution_price"))
+    upper = safe_float(item.get("max_execution_price"))
+    stop = safe_float(item.get("stop"))
+    rr = (safe_float(item.get("target1")) - value) / (value - stop) if value > stop else np.nan
+    if value <= stop:
+        return "VAROVÁNÍ", "Aktuální referenční cena je na invalidaci nebo pod ní.", rr
+    if not (np.isfinite(lower) and np.isfinite(upper) and lower <= value <= upper):
+        return "MIMO VSTUP", "Aktuální referenční cena leží mimo povolenou nákupní zónu.", rr
+    if not np.isfinite(rr) or rr < STRATEGY["min_rr"]:
+        return "MIMO VSTUP", "Aktuální poměr potenciálního zisku k riziku nestačí.", rr
+    return "V ZÓNĚ", "Referenční cena vyhovuje; intradenní potvrzení nebylo automaticky ověřeno.", rr
 
 
 # ---------------------- INDIKÁTORY ----------------------------
@@ -535,10 +617,8 @@ def check_execution_price(item, proposed):
     lower, upper = item["min_execution_price"], item["max_execution_price"]
     risk = proposed - item["stop"]
     rr = (item["target1"] - proposed) / risk if risk > 0 else np.nan
-    context = item.get("options_context", {})
-    context_fresh = not context.get("usable") or options_are_current(context)
-    if item.get("mode") == "crops":
-        context_fresh = weather_is_current(item.get("weather_context", {}))
+    context_fresh = (weather_is_current(item.get("weather_context", {}))
+                     if item.get("mode") == "crops" else True)
     ok = bool(item["buy_allowed"] and context_fresh and np.isfinite(proposed)
               and lower - 1e-9 <= proposed <= upper + 1e-9
               and np.isfinite(rr) and rr >= STRATEGY["min_rr"] - 1e-9)
@@ -797,7 +877,7 @@ def get_seasonality_context(ticker, as_of_day, holding_days=5):
 
 
 def apply_seasonality_filter(entry, context):
-    """Filtr smí vstup pouze omezit, nikdy obejít support nebo opční filtr."""
+    """Sezónní filtr může vstup omezit, nikdy obejít základní supportní filtr."""
     r = dict(entry)
     r["pre_seasonality_buy_allowed"] = bool(entry["buy_allowed"])
     r["seasonality_context"] = context
@@ -809,21 +889,13 @@ def apply_seasonality_filter(entry, context):
     r["entry_score"] = round(100 * sum(checks.values()) / len(checks), 1)
     if entry["buy_allowed"] and not r["buy_allowed"]:
         r["signal"] = "NEVSTUPOVAT · SEZÓNNOST"
-        r["entry_reason"] = "Technické a opční podmínky jsou splněny, ale nákup blokuje sezónnost."
+        r["entry_reason"] = "Technické podmínky jsou splněny, ale nákup blokuje sezónnost."
     else:
         r["entry_reason"] = entry["entry_reason"]
     r["entry_reason"] += " Sezónnost: " + context["reason"]
     r["strategy_version"] = "4.8"
     return r
 
-
-OPTION_RULES = {
-    "max_expiries": 3, "max_dte": 60, "strike_band_pct": 20.0,
-    "min_total_oi": 5000, "min_strike_oi": 1000,
-    "min_strike_share": 0.20, "near_strike_atr": 0.5,
-    "expiry_risk_days": 7, "put_call_attention": 1.5,
-    "max_context_age_hours": 24,
-}
 
 
 def local_today():
@@ -911,193 +983,48 @@ def get_corporate_events(ticker):
     return result
 
 
-def clean_option_side(frame, side, expiry, price):
-    """Neznámé OI ponechá NaN; chybějící data nejsou nula."""
-    if not isinstance(frame, pd.DataFrame) or frame.empty or "strike" not in frame:
-        return pd.DataFrame()
-    out = frame.copy()
-    for col in ("strike", "openInterest", "volume"):
-        values = out[col] if col in out else pd.Series(np.nan, index=out.index)
-        out[col] = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
-        out.loc[out[col] < 0, col] = np.nan
-    if "contractSize" in out:
-        out = out.loc[out["contractSize"].eq("REGULAR")].copy()
-    band = OPTION_RULES["strike_band_pct"] / 100
-    out = out.loc[out["strike"].between(price * (1 - band), price * (1 + band))].copy()
-    out["side"], out["expiry"] = side, expiry
-    return out[["side", "expiry", "strike", "openInterest", "volume"]]
-
-
-def summarize_options(rows, price, atr, expected_expiries=(), today=None):
-    """Analýza nejvýše 3 expirací; koncentrace se měří po jednotlivých expiracích."""
-    today = today or datetime.now(ZoneInfo("America/New_York")).date()
-    empty = {
-        "usable": False, "coverage_complete": False, "call_oi": None, "put_oi": None,
-        "call_volume": None, "put_volume": None, "put_call_oi": None,
-        "volume_coverage_complete": False,
-        "put_call_volume": None, "entry_block": False, "put_attention": False,
-        "expiry_risk": False, "concentration": [], "top_strikes": [],
-        "expiries": list(expected_expiries), "status": "Opční data nejsou dostupná.",
-    }
-    if rows.empty or not np.isfinite(price) or price <= 0:
-        return empty
-    calls, puts = rows.loc[rows["side"] == "CALL"], rows.loc[rows["side"] == "PUT"]
-    call_oi = safe_float(calls["openInterest"].sum(min_count=1), None)
-    put_oi = safe_float(puts["openInterest"].sum(min_count=1), None)
-    call_vol = safe_float(calls["volume"].sum(min_count=1), None)
-    put_vol = safe_float(puts["volume"].sum(min_count=1), None)
-    complete = bool(expected_expiries) and rows["openInterest"].notna().all()
-    volume_complete = bool(expected_expiries) and rows["volume"].notna().all()
-    for expiry in expected_expiries:
-        subset = rows.loc[rows["expiry"] == expiry]
-        complete = complete and set(subset["side"]) == {"CALL", "PUT"}
-        volume_complete = volume_complete and set(subset["side"]) == {"CALL", "PUT"}
-    total = (call_oi or 0) + (put_oi or 0)
-    usable = bool(complete and total >= OPTION_RULES["min_total_oi"])
-    # Výrazná koncentrace OI v nejbližších 7 dnech těsně nad cenou může omezit vstup.
-    # Nejde o prokázanou rezistenci ani předpověď ceny či směru hedgingu.
-    grouped = rows.groupby(["expiry", "side", "strike"], as_index=False).agg(
-        openInterest=("openInterest", lambda x: x.sum(min_count=1)),
-        volume=("volume", lambda x: x.sum(min_count=1)),
-    )
-    crowded = []
-    for expiry in expected_expiries:
-        expiry_day = event_date(expiry)
-        dte = (expiry_day - today).days if expiry_day else -1
-        series = grouped.loc[(grouped["expiry"] == expiry) & (grouped["side"] == "CALL")]
-        series_total = safe_float(series["openInterest"].sum(min_count=1), 0)
-        if not 0 <= dte <= OPTION_RULES["expiry_risk_days"] or series_total <= 0 or not atr > 0:
-            continue
-        near = series.loc[(series["strike"] >= price) &
-                          ((series["strike"] - price) <= OPTION_RULES["near_strike_atr"] * atr) &
-                          (series["openInterest"] >= OPTION_RULES["min_strike_oi"]) &
-                          (series["openInterest"] / series_total >= OPTION_RULES["min_strike_share"])]
-        for _, row in near.iterrows():
-            crowded.append({"expiry": expiry, "strike": float(row["strike"]),
-                            "oi": int(row["openInterest"]), "share": float(row["openInterest"] / series_total)})
-    pcr = put_oi / call_oi if call_oi is not None and call_oi > 0 and put_oi is not None else None
-    vcr = put_vol / call_vol if call_vol is not None and call_vol > 0 and put_vol is not None else None
-    top = grouped.sort_values("openInterest", ascending=False).head(12)
-    status = ("Dostatečný vzorek OI pro doplňkový filtr." if usable else
-              "Neúplné údaje OI nebo příliš malý vzorek; filtr není použit.")
-    return {**empty, "usable": usable, "coverage_complete": bool(complete),
-            "volume_coverage_complete": bool(volume_complete),
-            "call_oi": call_oi, "put_oi": put_oi, "call_volume": call_vol, "put_volume": put_vol,
-            "put_call_oi": pcr, "put_call_volume": vcr, "entry_block": bool(usable and crowded),
-            "put_attention": bool(usable and pcr is not None and pcr >= OPTION_RULES["put_call_attention"]),
-            "expiry_risk": bool(crowded), "concentration": crowded,
-            "top_strikes": top.where(pd.notna(top), None).to_dict("records"), "status": status}
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def get_options_context(ticker, price, atr):
-    obj, frames, errors, selected = yf.Ticker(ticker), [], [], []
-    today = datetime.now(ZoneInfo("America/New_York")).date()
-    try:
-        expiries = sorted(obj.options or ())
-        selected = [e for e in expiries if event_date(e) is not None and
-                    0 <= (event_date(e) - today).days <= OPTION_RULES["max_dte"]][:OPTION_RULES["max_expiries"]]
-        for expiry in selected:
-            try:
-                chain = obj.option_chain(expiry)
-                frames.extend([clean_option_side(chain.calls, "CALL", expiry, price),
-                               clean_option_side(chain.puts, "PUT", expiry, price)])
-            except Exception as e:
-                log.warning("Opce %s %s: %s", ticker, expiry, e)
-                errors.append(f"Expirace {expiry} se nepodařila načíst.")
-    except Exception as e:
-        log.warning("Opční expirace %s: %s", ticker, e)
-        errors.append("Seznam opčních expirací se nepodařilo načíst.")
-    frames = [f for f in frames if not f.empty]
-    rows = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    result = summarize_options(rows, price, atr, selected, today)
-    if not selected and not errors:
-        result["status"] = "Yahoo neposkytuje expirace v rozsahu 0–60 dnů; filtr není použit."
-    if errors:
-        result.update(usable=False, entry_block=False, put_attention=False, volume_coverage_complete=False,
-                      status="Část opčních dat není dostupná; filtr není použit.")
-    result.update(errors=errors, fetched_at=datetime.now(timezone.utc).isoformat())
-    return result
-
-
-def options_are_current(context, now=None):
-    """Kontroluje stáří načtení, nikoli neznámé datum OI od poskytovatele."""
-    try:
-        fetched = pd.Timestamp(context.get("fetched_at"))
-        now = pd.Timestamp(now if now is not None else datetime.now(timezone.utc))
-        if pd.isna(fetched) or fetched.tzinfo is None:
-            return False
-        age = (now - fetched).total_seconds() / 3600
-        return 0 <= age <= OPTION_RULES["max_context_age_hours"]
-    except (TypeError, ValueError):
-        return False
-
-
-def apply_options_filter(entry, context):
-    """Opce mohou vstup omezit; nikdy nepovolí vstup, který odmítla technická analýza."""
-    r = dict(entry)
-    r["technical_buy_allowed"] = r["buy_allowed"]
-    r["options_context"] = context
-    checks = dict(r["entry_checks"])
-    if context.get("usable") and options_are_current(context):
-        checks["Bez blízké koncentrace CALL OI před expirací"] = not context["entry_block"]
-    r["entry_checks"] = checks
-    r["buy_allowed"] = all(checks.values())
-    r["entry_score"] = round(100 * sum(checks.values()) / len(checks), 1)
-    if not r["buy_allowed"]:
-        if r["technical_buy_allowed"]:
-            r["signal"] = "NEVSTUPOVAT · OPČNÍ KONCENTRACE"
-        r["entry_reason"] = "Nesplněno: " + "; ".join(k for k, ok in checks.items() if not ok)
-    if not context.get("usable"):
-        r["entry_reason"] += " Opční údaje chybí nebo nejsou úplné; opční filtr se nepoužil."
-    r["strategy_version"] = "4.8"
-    return r
+# Opční řetězce byly odebrány z uživatelského rozhraní i rozhodovací logiky.
 
 
 def assess_trade_action(item: dict, held=False, position_stop=None, position_target=None) -> dict:
     """Odděleně nový vstup a správa existující long pozice, vždy z uzavřeného dne.
 
     Vlastní stop/cíl má přednost. Nezaměňujeme nový modelový stop s plánem držitele.
-    Samotné OI nikdy nevyvolá prodej; vyžadujeme současně cenové oslabení.
+    Volitelné mimoburzovní kotace slouží jen ke kontrole aktuálního rizika.
     """
     result = {"trend_label": "BÝČÍ" if item["trend_ok"] else "NEPOTVRZENÝ / SLABÝ"}
     if not held:
         if item.get("mode") == "crops" and not weather_is_current(item.get("weather_context", {})):
             return {**result, "action_label": "ČEKAT / NEVSTUPOVAT",
                     "action_reason": "Počasí chybí, není úplné nebo je snímek starší než 6 hodin. Spusťte nový sken."}
-        opts = item.get("options_context", {})
-        if opts.get("usable") and not options_are_current(opts):
+        context, reason, _ = risk_quote_context(item)
+        if item.get("mode") == "stocks" and context != "V ZÓNĚ":
             return {**result, "action_label": "ČEKAT / NEVSTUPOVAT",
-                    "action_reason": "Záznam opčních dat je starší než 24 hodin. Spusťte nový sken."}
+                    "action_reason": reason + " (Zohledněna poslední dostupná cena včetně mimořádných hodin.)"}
         return {**result, "action_label": "NAKUPOVAT" if item["buy_allowed"] else "ČEKAT / NEVSTUPOVAT",
-                "action_reason": item["entry_reason"]}
-    price = item["price"]
+                "action_reason": item["entry_reason"] + " " + reason}
+    price = item.get("effective_price", item["price"])
     stop, target = safe_float(position_stop, 0), safe_float(position_target, 0)
     if stop > 0 and target > 0 and target <= stop:
         return {**result, "action_label": "OVĚŘIT PLÁN", "action_reason": "U nákupní pozice musí být cílová cena nad úrovní stopu."}
+    extended_illiquid = (item.get("extended_quote") or {}).get("kind") in {"PRE", "POST"}
     if stop > 0 and price <= stop:
-        label, reason = "PRODAT", "Závěrečná cena je na úrovni vašeho stopu nebo pod ní."
+        label = "OVĚŘIT STOP" if extended_illiquid else "PRODAT"
+        reason = ("PRE/POST cena je pod vaším stopem; mimo řádnou seanci nemusí být stop aktivní. "
+                  "Ověřte kotaci a podmínky brokera." if extended_illiquid else
+                  "Poslední referenční cena je na úrovni vašeho stopu nebo pod ní.")
     elif target > 0 and price >= target:
-        label, reason = "PRODAT", "Závěrečná cena dosáhla vašeho cíle nebo jej překonala."
+        label = "OVĚŘIT CÍL" if extended_illiquid else "PRODAT"
+        reason = ("PRE/POST cena dosáhla cíle, ale může mít nízkou likviditu. Ověřte obchodovatelnost." if extended_illiquid else
+                  "Poslední referenční cena dosáhla vašeho cíle nebo jej překonala.")
     elif str(item.get("structure_event", "")).endswith("dolů"):
         label, reason = "PRODAT / ZVÁŽIT REDUKCI", "Potvrzený průlom swingové struktury dolů."
     else:
-        opts = item.get("options_context", {})
         weak = price < item["ema50"] and item["macd_hist"] < 0 and not item["trend_ok"]
-        option_risk = opts.get("usable") and options_are_current(opts) and (
-            opts.get("entry_block") or opts.get("put_attention"))
-        if weak and option_risk:
-            label = "PRODAT / ZVÁŽIT REDUKCI"
-            reason = ("Cena pod EMA50 a záporný MACD potvrzují oslabení; současně je přítomna "
-                      "opční koncentrace nebo převaha PUT OI. Jde o konzervativní heuristiku, "
-                      "nikoli důkaz prodejů institucí.")
-        else:
-            label = "DRŽET / SLEDOVAT"
-            reason = "Podle poslední dokončené denní svíčky není splněna žádná podmínka pro výstup."
-            if weak:
-                reason += " Technické ukazatele slábnou; zkontrolujte vlastní stop."
-            if option_risk:
-                reason += " Opční data vyžadují zvýšenou pozornost, sama však nejsou důvodem k prodeji."
+        label = "DRŽET / SLEDOVAT"
+        reason = "Podle poslední dokončené denní svíčky nebyla potvrzena podmínka pro výstup."
+        if weak:
+            reason += " Technické ukazatele slábnou; ověřte aktuální stop."
     if not (stop > 0 or target > 0):
         reason += " Nebyla zadána vlastní úroveň stopu ani cílová cena."
     return {**result, "action_label": label, "action_reason": reason}
@@ -1326,6 +1253,152 @@ def load_learning_stats(sb, days: int = 90, mode="stocks", holding_days=5):
     except Exception as e:
         log.error("load_learning_stats selhalo: %s", e, exc_info=True)
         return pd.DataFrame()
+
+# ---------------------- ADAPTIVNÍ UČENÍ -----------------------
+@st.cache_resource(show_spinner=False)
+def get_adaptive_supabase():
+    """Only server-side service key can write private RLS-protected snapshots."""
+    try:
+        url = st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
+        return create_client(url, key) if url and key else None
+    except Exception as exc:
+        log.warning("Adaptivní Supabase není dostupná: %s", exc)
+        return None
+
+
+def snapshot_signal(item):
+    """Frozen features, not modified retroactively by learning."""
+    row = {
+        "ticker": item["ticker"], "signal_date": pd.Timestamp(item["data"].index[-1]).date().isoformat(),
+        "mode": item.get("mode", "stocks"), "horizon": int(item.get("holding_days", 5)),
+        "model_version": LEARNING_MODEL_VERSION,
+        "strategy_version": str(item.get("strategy_version", "4.8")),
+        "signal": str(item.get("signal", "")), "buy_allowed": bool(item.get("buy_allowed", False)),
+        "snapshot_close": safe_float(item.get("price")),
+        "entry_price": safe_float(item.get("preferred_entry")),
+        "stop_price": safe_float(item.get("stop")),
+        "target_price": safe_float(item.get("target1")),
+        "min_execution_price": safe_float(item.get("min_execution_price")),
+        "max_execution_price": safe_float(item.get("max_execution_price")),
+        "support_distance_atr": safe_float(item.get("support_distance_atr")),
+        "volume_ratio": safe_float(item.get("volume_ratio")),
+        "trend_score": safe_float(item.get("trend_score")),
+        "quality_score": safe_float(item.get("quality_score")),
+        "entry_score": safe_float(item.get("entry_score")),
+        "style_score": safe_float(item.get("style_score")),
+        "rr1": safe_float(item.get("rr1")),
+        "price_type": (item.get("extended_quote") or {}).get("kind", "DAILY"),
+        "price_time": (item.get("extended_quote") or {}).get("asof"),
+        "features": bucket_features(item),
+    }
+    for k, v in row.items():
+        if isinstance(v, (float, np.floating)) and not np.isfinite(v):
+            row[k] = None
+    row["status"] = "PENDING" if row["buy_allowed"] else "INELIGIBLE"
+    row["outcome"] = None if row["buy_allowed"] else "INELIGIBLE"
+    return row
+
+
+def save_adaptive_snapshots(sb, rows):
+    if sb is None or not rows:
+        return False
+    try:
+        snapshots = [snapshot_signal(item) for item in rows]
+        # Ignore duplicate same-day scans. Never rewrite a historical snapshot.
+        sb.table("scanner_adaptive_signals").upsert(
+            snapshots, on_conflict="ticker,signal_date,mode,horizon,model_version",
+            ignore_duplicates=True).execute()
+        return True
+    except Exception as exc:
+        log.warning("Adaptivní snímky nelze uložit; ověřte migraci a RLS: %s", exc)
+        return False
+
+
+def update_adaptive_outcomes(sb, max_rows=160):
+    """Matured-only outcome updates, with zero use of the current partial daily bar."""
+    if sb is None:
+        return 0
+    updated = 0
+    try:
+        pending = (sb.table("scanner_adaptive_signals").select("*")
+                   .eq("status", "PENDING").order("signal_date")
+                   .limit(max_rows).execute().data or [])
+        now = datetime.now(timezone.utc).date()
+        for row in pending:
+            if pd.Timestamp(row["signal_date"]).date() >= now:
+                continue
+            age = (now - pd.Timestamp(row["signal_date"]).date()).days
+            period = "5y" if age > 650 else ("2y" if age > 300 else "1y")
+            hist = download_history(row["ticker"], period, "1d")
+            result = outcome_from_bars(row, hist)
+            if result["status"] == "PENDING":
+                continue
+            (sb.table("scanner_adaptive_signals").update(result)
+             .eq("id", row["id"]).eq("status", "PENDING").execute())
+            updated += 1
+    except Exception as exc:
+        log.warning("Vyhodnocení adaptivních výsledků selhalo: %s", exc)
+    return updated
+
+
+def load_adaptive_resolved(sb, mode, horizon, limit=1000):
+    if sb is None:
+        return []
+    try:
+        # Filter same market and evaluation horizon to avoid mixing strategies.
+        return (sb.table("scanner_adaptive_signals").select("*")
+                .eq("status", "RESOLVED").eq("mode", mode).eq("horizon", horizon)
+                .eq("model_version", LEARNING_MODEL_VERSION)
+                .order("resolved_at", desc=True).limit(limit).execute().data or [])
+    except Exception as exc:
+        log.warning("Nelze načíst modelovou historii: %s", exc)
+        return []
+
+
+def apply_adaptive_ranking(results, training):
+    """Update rank only. Never bypass technical invalidation or risk limits."""
+    ranked = []
+    for original in results:
+        item = dict(original)
+        learned = learned_adjustment(item, training)
+        item["style_score"] = personal_style_score(item)
+        item["adaptive_learning"] = learned
+        item["adaptive_score"] = round(float(np.clip(float(item["entry_score"]) + learned["adjustment"], 0, 100)), 1)
+        ranked.append(item)
+    return sorted(ranked, key=lambda r: (r["buy_allowed"], r["adaptive_score"],
+                                          r["quality_score"]), reverse=True)
+
+
+def render_adaptive_learning(sb, mode, horizon):
+    st.subheader("Adaptivní učení z dokončených signálů")
+    st.caption("Model průběžně přepočítává konzervativní korekci pořadí podle reálných výsledků "
+               "historických simulovaných vstupů. Vstup na open následující seance, "
+               "pouze dokončené denní svíčky; nejasné a nevyplněné vstupy se neučí. "
+               f"Simulované náklady {TRAINING_COST_PCT:.2f} % za celý obchod. "
+               "Jde o učení z výsledků signálů, nikoli automatický trading ani pravděpodobnost úspěchu.")
+    if sb is None:
+        st.warning("Adaptivní databáze zatím není připojena. Spusťte SQL migraci a nastavte "
+                   "SUPABASE_SERVICE_ROLE_KEY ve Streamlit Secrets. Bez databáze se skóre neučí.")
+        return
+    if st.button("Aktualizovat dokončené výsledky", key=f"refresh_adapt_{mode}_{horizon}"):
+        with st.spinner("Kontroluji historické signály…"):
+            updated = update_adaptive_outcomes(sb)
+        st.info(f"Nově vyhodnocených záznamů: {updated}")
+    resolved = load_adaptive_resolved(sb, mode, horizon)
+    st.metric("Jednoznačně vyhodnocené vstupy", len(resolved))
+    if not resolved:
+        st.info("První učící data vzniknou až po uložených signálech a uplynutí jejich horizontu.")
+        return
+    df = pd.DataFrame(resolved)
+    cols = st.columns(3)
+    cols[0].metric("Průměrné hrubé R", display_number(pd.to_numeric(df["realized_r"],errors="coerce").mean(),3))
+    cols[1].metric("Zasažené cíle", str(int((df["outcome"]=="TP1").sum())))
+    cols[2].metric("Zasažené stopy", str(int((df["outcome"]=="SL").sum())))
+    st.dataframe(df[[c for c in ["ticker","signal_date","outcome","realized_return_pct",
+                                 "realized_r","resolved_at"] if c in df]],
+                 use_container_width=True, hide_index=True)
+
 
 # ---------------------- PLODINY A POČASÍ ----------------------
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1567,18 +1640,22 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
     if spy.empty or pd.Timestamp(spy.index[-1]).date() != last_day:
         data_ok = False
     entry = calculate_entry_engine(d, scores, regime, data_ok, mode)
-    if mode == "stocks":
-        entry = apply_options_filter(entry, get_options_context(ticker, float(x["Close"]), float(x["ATR14"])))
-    else:
-        entry.update(technical_buy_allowed=entry["buy_allowed"], options_context={
-            "usable": False, "entry_block": False, "put_call_oi": None, "fetched_at": None})
+    # Opční výpočty byly z rozhodování záměrně odstraněny.
+    entry["technical_buy_allowed"] = entry["buy_allowed"]
     entry = apply_seasonality_filter(entry, get_seasonality_context(
         ticker, last_day.isoformat(), holding_days))
     if mode == "crops":
         entry = apply_weather_filter(entry, weather_context or {})
         entry["signal"] = buy_signal(mode, holding_days) if entry["buy_allowed"] else f"PLODINY · {holding_days}D · " + entry["signal"]
     events = get_corporate_events(ticker) if mode == "stocks" else {}
-    gain_per_dollar = max(0.0, float(d["Close"].tail(20).max()) / float(x["Close"]) - 1)
+    quote = extended_market_quote(ticker, last_day) if mode == "stocks" else None
+    effective_price = quote["price"] if quote is not None else float(x["Close"])
+    # An actual 30 calendar day lookback, not 30 trading sessions.
+    from_day = last_day - timedelta(days=29)
+    recent30 = d.loc[pd.to_datetime(d.index).date >= from_day]
+    gain_per_dollar = max(0.0, float(d["Close"].tail(20).max()) / effective_price - 1)
+    gain_30c_per_dollar = (max(0.0, float(recent30["Close"].max()) / effective_price - 1)
+                            if not recent30.empty else np.nan)
     patterns = detect_patterns(d)
     structure = analyze_market_structure(d)
 
@@ -1587,6 +1664,9 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
         "mode": mode, "holding_days": holding_days,
         "corporate_events": events,
         "gain_per_dollar": gain_per_dollar,
+        "gain_30c_per_dollar": gain_30c_per_dollar,
+        "extended_quote": quote,
+        "effective_price": effective_price,
         "name":         ticker,
         "sector":       "N/A",
         "data":         d,
@@ -1712,10 +1792,11 @@ def earnings_in_window(events, window=7, today=None):
     return bool(first and last and first <= today + timedelta(days=window) and last >= today)
 
 
-def filter_results(results, high_gain=True, outperforming=False, safe_earnings=True):
-    """Display filters; they never modify stored technical signals or force a BUY."""
+def filter_results(results, high_gain=False, outperforming=False, safe_earnings=True, high_gain30=True):
+    """20 session close high (6%) and 30-calendar-day close high (15%) are independent filters."""
     return [item for item in results
             if (not high_gain or safe_float(item.get("gain_per_dollar"), -1) >= 0.06 - 1e-12)
+            and (not high_gain30 or safe_float(item.get("gain_30c_per_dollar"), -1) >= 0.15 - 1e-12)
             and (not outperforming or safe_float(item.get("rs_30d"), 0) > 0)
             and (not safe_earnings or not earnings_in_window(item.get("corporate_events", {})))]
 
@@ -1734,30 +1815,6 @@ def render_events_panel(ticker, events):
     st.caption(f"{subtitle} · {events.get('earnings_kind', 'Yahoo Finance; datum může být odhadem.')}")
     if earnings_in_window(events):
         st.warning("Výsledky budou zveřejněny během příštích 7 dnů nebo již začalo odhadované období jejich zveřejnění.")
-
-
-def render_options_panel(context):
-    st.markdown("#### ⚖️ Opční zájem · rozdíl objemů")
-    put = safe_float(context.get("put_volume"), None)
-    call = safe_float(context.get("call_volume"), None)
-    complete = context.get("volume_coverage_complete", False)
-    if complete and put is not None and call is not None:
-        delta = put - call
-        formatted = display_number(delta, 0, sign=True)
-        st.metric("PUT − CALL (zobchodované kontrakty)", formatted)
-        balance = "Vyšší objem opcí PUT" if delta > 0 else ("Vyšší objem opcí CALL" if delta < 0 else "Stejný objem opcí PUT a CALL")
-        st.caption(f"{balance} · PUT {display_number(put, 0)} · CALL {display_number(call, 0)}")
-    else:
-        st.metric("PUT − CALL (zobchodované kontrakty)", "Nedostupné")
-        st.caption("Údaje o objemech opcí PUT a CALL nejsou úplné. Rozdíl nelze spolehlivě vypočítat.")
-    st.caption("Vzorek zahrnuje nejvýše 3 termíny expirace během 60 dnů a realizační ceny v rozmezí ±20 % od ceny v den signálu. "
-               "Objem vyjadřuje počet zobchodovaných kontraktů. Neurčuje počet otevřených pozic ani nákupy či prodeje institucí.")
-    if context.get("entry_block"):
-        st.warning("Původní opční filtr blokuje nový vstup kvůli blízké koncentraci CALL OI před expirací.")
-    elif not context.get("usable"):
-        st.caption("Filtr otevřených opčních pozic (OI) nebyl použit: neúplný nebo malý vzorek.")
-    if not options_are_current(context):
-        st.warning("Opční údaje jsou starší než 24 hodin nebo u nich chybí platný čas načtení. Spusťte nový sken.")
 
 
 def render_seasonality_panel(ticker, context):
@@ -1814,6 +1871,67 @@ def apply_design():
     """, unsafe_allow_html=True)
 
 
+def render_personal_decision(item, capital, risk_pct, max_position_pct):
+    mode, ticker = item.get("mode", "stocks"), item["ticker"]
+    st.markdown("#### 🧠 Osobní filtr: invalidace → vstup → riziko")
+    action = assess_trade_action(item)
+    state, message, rr_live = risk_quote_context(item)
+    if not item.get("buy_allowed"):
+        st.warning(f"**Nový nákup podle technických pravidel blokován:** {item['entry_reason']}")
+    elif state != "V ZÓNĚ":
+        st.warning(f"**Nový nákup mimo vstupní oblast:** {message}")
+    else:
+        st.info(f"**Předběžný kandidát:** {message}")
+    if item.get("extended_quote"):
+        st.caption("Upozornění: PRE/POST cena kontroluje aktuální vzdálenost ke stopu a vstupní zóně, "
+                   "ale nepotvrzuje denní ani 30minutový obrat. Cena mimo řádnou seanci může mít široký spread.")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Support", display_number(item.get("support"),currency=True))
+    c2.metric("Invalidace / stop", display_number(item.get("stop"),currency=True))
+    c3.metric("Maximální vstup", display_number(item.get("max_execution_price"),currency=True))
+    c4.metric("R:R při referenční ceně", display_number(rr_live,2))
+    learned = item.get("adaptive_learning", {})
+    st.caption(f"Shoda se stylem {item.get('style_score', 0):.0f}/100 (ne pravděpodobnost zisku) · "
+               f"Nezávislá kvalita {item['quality_score']:.1f}/100 · "
+               f"Původní vstupní skóre {item['entry_score']:.1f}/100 · "
+               f"Adaptivní priorita {item.get('adaptive_score', item['entry_score']):.1f}/100 "
+               f"(korekce {learned.get('adjustment', 0):+.2f}; ověřených výsledků {learned.get('samples', 0)}). "
+               "Adaptivní korekce ovlivňuje pořadí, nikdy neobchází invalidaci.")
+    with st.expander("Kontrola podmínek před nákupem", expanded=False):
+        for label, ok in item.get("entry_checks", {}).items():
+            st.write(("✅ " if ok else "⬜ ") + label)
+        st.caption(learned.get('explanation', 'Učení zatím nemá vyhodnocené signály.'))
+    st.write("**Výpočet pozice z pevného rizika**")
+    proposed = st.number_input("Zamýšlená cena nákupu (USD)", min_value=0.01,
+         value=max(.01, safe_float(item.get("effective_price"), item["price"])),
+         step=.01, format="%.4f", key=f"proposed_{mode}_{ticker}")
+    price_ok, rr = check_execution_price(item, proposed)
+    shares, full_value, _, per_share = position_size(capital, risk_pct, proposed,
+                                                       item["stop"], max_position_pct)
+    if not price_ok or (mode == "stocks" and state == "VAROVÁNÍ"):
+        shares, full_value = 0, 0.
+        st.warning("Tato cena / původní signál nesplňuje povinné podmínky; výpočet nákupu blokován.")
+    else:
+        st.caption("Pozor: povolená ruční cena není potvrzení aktuálního intradenního signálu.")
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Maximálně jednotek",shares)
+    c2.metric("Celá pozice",display_number(full_value,currency=True))
+    c3.metric("První tranše 20 %",display_number(full_value*.2,currency=True))
+    c4.metric("Plánované riziko celku",display_number(shares*per_share,currency=True))
+    st.caption("Plánované maximum dle zadaného kapitálu a stopu; neobsahuje poplatky, "
+               "skluz ani skoky přes stop. Rozdělení 20/30/50 je pracovní pravidlo pro celý rizikový rozpočet.")
+    held = st.checkbox("Již držím: zobrazit kontrolu stávající pozice",key=f"held_{mode}_{ticker}")
+    if held:
+        x1,x2=st.columns(2)
+        own_stop=x1.number_input("Můj ochranný stop (0 = neznámý)",min_value=0.,value=0.,
+                                  key=f"held_stop_{mode}_{ticker}")
+        own_target=x2.number_input("Můj cíl (0 = neurčen)",min_value=0.,value=0.,
+                                  key=f"held_target_{mode}_{ticker}")
+        assessment=assess_trade_action(item, True,own_stop,own_target)
+        st.info(f"**{assessment['action_label']}** — {assessment['action_reason']}")
+    st.caption("Návrh je analytická pomůcka, nikoli příkaz u brokera.")
+
+
 def render_instrument(item, capital, risk_pct, max_position_pct):
     ticker, mode = item["ticker"], item.get("mode", "stocks")
     st.subheader(f"{ticker} · {item['signal']}")
@@ -1822,8 +1940,14 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
         f"{display_number(item['zone_high'], currency=True)} · Preferovaný vstup {display_number(item['preferred_entry'], currency=True)}"
     )
 
-    st.caption(f"Datum signálu: {display_date(item['data'].index[-1])}. "
-               "Dnešní denní svíčka je vynechána. Cena není živá kotace.")
+    quote = item.get("extended_quote")
+    if quote:
+        st.caption(f"Signální den: {display_date(item['data'].index[-1])} (dokončený). "
+                   f"Referenční {quote['kind']} cena: {display_number(quote['price'], currency=True)} "
+                   f"· čas {quote['asof']}. Nejde o živou garantovanou kotaci.")
+    else:
+        st.caption(f"Signální den: {display_date(item['data'].index[-1])}. "
+                   "Intraday/PRE/POST nejsou k dispozici; denní data jsou dokončená.")
     st.write(f"Počet potvrzených testů podpory: {item['support_touches']}; "
              f"vzdálenost {display_number(item['support_distance_atr'])} ATR "
              f"({display_number(item['support_distance_pct'])} %).")
@@ -1831,27 +1955,21 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
         render_crop_panel(item)
     else:
         render_events_panel(ticker, item["corporate_events"])
-        render_options_panel(item["options_context"])
     render_seasonality_panel(ticker, item["seasonality_context"])
-    st.markdown("#### 🧭 Struktura trhu")
-    st.write(f"**{item['structure_trend']}** · {item['structure_event']}")
-    st.caption(
-        f"Poslední potvrzená lokální maxima a minima: maximum {display_number(item['swing_high'], currency=True)} · "
-        f"minimum {display_number(item['swing_low'], currency=True)}. Lokální maxima a minima se potvrzují až po uzavření dalších svíček."
-    )
-
     # Síťové doplňky se načítají jen po kliknutí v konkrétní ticker záložce.
     if mode == "stocks" and st.button("Načíst název, cenu před otevřením trhu a zprávy", key=f"load_context_{ticker}"):
         st.session_state[f"context_loaded_{ticker}"] = True
     if mode == "stocks" and st.session_state.get(f"context_loaded_{ticker}", False):
         name, sector = basic_info(ticker)
-        pre_price, pre_change = premarket(ticker)
+        quote = item.get("extended_quote")
         st.markdown(f"**{name}** · Sektor: {sector}")
-        if pre_price is not None:
-            st.metric("Cena před otevřením trhu", f"{display_number(pre_price, 2, currency=True)}", f"{display_number(pre_change, 2, sign=True)} %")
-            st.caption("Poslední dostupná cena z obchodování před otevřením trhu; nemusí být aktuální.")
+        if quote:
+            st.metric(f"Referenční cena {quote['kind']} (PRE/REG/POST)",
+                      display_number(quote['price'], 2, currency=True),
+                      f"{display_number((quote['price']/item['price']-1)*100, 2, sign=True)} % vůči poslednímu dokončenému dni")
+            st.caption(f"Čas 5min baru: {quote['asof']}. Zpožděná kotace Yahoo; nejedná se o živý závazný kurz.")
         else:
-            st.caption("Cena před otevřením trhu není dostupná.")
+            st.caption("Aktuální mimoburzovní cena není dostupná; výpočty vycházejí z dokončených denních dat.")
         news = get_news_context(ticker)
         st.markdown("#### 📰 Zprávy a jejich vyznění")
         st.caption(
@@ -1892,83 +2010,11 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
         st.warning("Objemová data nejsou dostatečná pro výpočet poměru objemů. Podmínky likvidity nadále blokují nový nákup.")
 
     g1, g2 = st.columns(2)
-    g1.metric("Prostor k 20dennímu maximu na 1 USD", f"{display_number(item['gain_per_dollar'], 3, currency=True)}")
-    g2.metric("Prostor k 20dennímu maximu", f"{display_number(item['gain_per_dollar'] * 100, 2)} %")
-    st.caption("Rozdíl vůči nejvyšší závěrečné ceně posledních 20 dokončených seancí. Nejde o prognózu zisku.")
-    st.markdown("#### 🧰 Obchodní plán")
-    held = st.checkbox("Tento instrument již držím – vyhodnotit stávající pozici", key=f"held_{mode}_{ticker}")
-    own_stop, own_target = None, None
-    if held:
-        ps, pt = st.columns(2)
-        own_stop = ps.number_input("Vlastní stop pozice (0 = nezadán)", min_value=0.0,
-                                   value=0.0, step=0.01, key=f"held_stop_{mode}_{ticker}")
-        own_target = pt.number_input("Vlastní cíl pozice (0 = nezadán)", min_value=0.0,
-                                     value=0.0, step=0.01, key=f"held_target_{mode}_{ticker}")
-        st.caption("Úroveň stopu a cílovou cenu zadejte ve stejné měně a na stejném cenovém základě jako zobrazenou cenu. "
-                   "Hodnocení porovnává závěrečnou cenu, nikoli dosažení úrovně pokynu během dne. "
-                   "Nastavení pozice a ručně zadané údaje platí po dobu aktuální relace aplikace.")
-    assessment = assess_trade_action(item, held, own_stop, own_target)
-    action_message = (
-        f"**Orientační doporučení: {assessment['action_label']}** — "
-        f"{assessment['action_reason']}"
-    )
-    if assessment["action_label"] in {"NAKUPOVAT", "POMALU DOKUPOVAT"}:
-        st.success(action_message)
-    elif assessment["action_label"] in {"ČEKAT / NEVSTUPOVAT", "DRŽET / SLEDOVAT"}:
-        st.info(action_message)
-    elif assessment["action_label"] in {"PRODAT / ZVÁŽIT REDUKCI", "OVĚŘIT PLÁN"}:
-        st.warning(action_message)
-    else:
-        st.error(action_message)
-    st.info(f"**Trend: {assessment['trend_label']}** · {item['structure_event']}")
-    st.caption("Automatické technické vyhodnocení; zohledněte vlastní strategii a riziko.")
-
-    # Future strategy interpretation belongs here; no personal rules are inferred.
-    st.caption("Současné vyhodnocení používá pravidla jádra 4.8. Osobní obchodní strategie zatím není začleněna.")
-    with st.expander("Podmínky vstupu", expanded=False):
-        left, right = st.columns(2)
-        for index, (label, ok) in enumerate(item["entry_checks"].items()):
-            (left if index % 2 == 0 else right).caption(("✅ " if ok else "⬜ ") + label)
-
-    t1, t2, t3 = st.columns(3)
-    t1.metric("Nejvyšší vstupní cena podle plánu", f"{display_number(item['max_execution_price'], 4, currency=True)}")
-    t2.metric("Medián obratu za 20 seancí", f"{display_number(item['median_dollar_volume']/1e6, 1)} mil.")
-    t3.metric("Objem při odrazu vůči průměru za 20 seancí", f"{display_number(item['bounce_volume_ratio'], 2)}×")
-    st.caption("Obrat = upravená cena × objem, orientačně v měně kotace (u amerických akcií v USD). "
-               "Není to měření spreadu ani hloubky trhu. Maximum vstupu není pokyn k nákupu.")
-    st.write("**Souběh ukazatelů u podpory:** " + (", ".join(item["confluence"]) or "EMA20 ani EMA50 nejsou poblíž"))
-    st.write("**Korekce při klesajícím objemu:** " + ("ano" if item["quiet_pullback"] else "nepotvrzena"))
-    st.caption("Souběh ukazatelů a objem jsou doplňkové informace; nenahrazují povinné podmínky.")
-    st.write(f"**Plán pro vstup podle signálu:** stop {display_number(item['stop'], currency=True)}; "
-             f"TP1 {display_number(item['target1'], currency=True)}; úroveň +1R {display_number(item['one_r_price'], currency=True)}; "
-             f"časový výstup nejpozději na konci {item.get('holding_days', 5)}. obchodního dne včetně vstupního.")
-    st.caption("+1R je orientační milník, ne automatický přesun stopu. "
-               "Před objednávkou ověřte aktuálnost dat, zprávy, spread a graf. Aplikace pokyny neprovádí.")
-    proposed = st.number_input("Zkušební vstupní cena (ruční zadání)",
-                               min_value=0.01, value=max(0.01, float(item["price"])),
-                               step=0.01, format="%.4f", key=f"proposed_{mode}_{ticker}")
-    price_ok, proposed_rr = check_execution_price(item, proposed)
-    st.write(f"R:R při této ceně, se stejným stopem a TP1: {display_number(proposed_rr)}")
-    if price_ok:
-        st.success("Zadaná cena vyhovuje uloženému plánu. Aktuální tržní situace nebyla znovu ověřena.")
-    else:
-        st.warning("Zadaná cena nebo původní signál nesplňuje plán: nevstupovat podle tohoto výpočtu.")
-    st.caption("Pro nový signální den spusťte nový sken. Ruční změna ceny nemění uložený signál.")
-
-    shares, value, _, per_share = position_size(
-        capital, risk_pct, proposed, item["stop"], max_position_pct
-    )
-    if not price_ok:
-        shares, value, per_share = 0, 0.0, 0.0
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Počet jednotek ETC při zkušební ceně" if mode == "crops" else "Počet akcií při zkušební ceně", shares)
-    p2.metric("Hodnota pozice", f"{display_number(value, 2, currency=True)}")
-    p3.metric("Riziko na jednotku ETC" if mode == "crops" else "Riziko na akcii", f"{display_number(per_share, 2, currency=True)}")
-    p4.metric("Riziko pozice", f"{display_number(shares * per_share, 2, currency=True)}")
-    st.caption(
-        "Výpočty nezahrnují poplatky, skluz, měnové riziko ani cenové mezery. "
-        "Nejde o investiční doporučení."
-    )
+    g1.metric("Potenciál k maximu 20 seancí / 1 USD", f"{display_number(item['gain_per_dollar'], 3, currency=True)}")
+    g2.metric("Potenciál k maximu 30 kal. dnů / 1 USD", f"{display_number(item['gain_30c_per_dollar'], 3, currency=True)}")
+    st.caption("Historický prostor k dřívější nejvyšší závěrečné ceně, přepočítaný z "
+               "poslední dostupné referenční ceny (případně PRE/POST). Není to očekávaný zisk.")
+    render_personal_decision(item, capital, risk_pct, max_position_pct)
 
     st.markdown("#### 📈 Cena, klouzavé průměry a obchodní úrovně")
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -2118,6 +2164,7 @@ PROFILE_DEFAULTS = {
     "results": [], "regime": None, "regime_score": 0, "scan_has_run": False,
     "scan_total": 0, "scan_finished": "—", "save_status": "",
     "history_df": None, "learning_df": None, "scan_diagnostics": {}, "scanned_tickers": [],
+    "adaptive_save_status": "",
 }
 
 
@@ -2155,19 +2202,33 @@ def scan_weather_contexts(tickers, progress=None):
     return contexts
 
 
-def filter_exclusion_reasons(item, high_gain, outperforming, safe_earnings):
+def filter_exclusion_reasons(item, high_gain, outperforming, safe_earnings, high_gain30=True):
     reasons = []
-    if high_gain and safe_float(item.get("gain_per_dollar"), -1) < 0.06 - 1e-12:
-        reasons.append("Prostor k 20dennímu maximu nedosahuje 6 % nebo jej nelze vypočítat.")
+    if high_gain and safe_float(item.get("gain_per_dollar"), -1) < .06:
+        reasons.append("Potenciál k 20seančnímu maximu nedosahuje 0,06 USD / 1 USD.")
+    if high_gain30 and safe_float(item.get("gain_30c_per_dollar"), -1) < .15:
+        reasons.append("Potenciál k maximu posledních 30 kalendářních dnů nedosahuje 0,15 USD / 1 USD.")
     if outperforming and safe_float(item.get("rs_30d"), 0) <= 0:
-        reasons.append("Instrument nepřekonává srovnávací koš za posledních 30 seancí.")
+        reasons.append("Instrument nepřekonává srovnávací koš za 30 seancí.")
     if safe_earnings and earnings_in_window(item.get("corporate_events", {})):
-        reasons.append("Zveřejnění výsledků spadá do příštích 7 dnů.")
+        reasons.append("Termín výsledků spadá do příštích 7 dnů.")
     return reasons
 
 
+def ticker_summary(item):
+    quote = item.get("extended_quote")
+    price_tag = quote["kind"] if quote else "D1"
+    price = item.get("effective_price",item["price"])
+    return (f"{item['ticker']} · {item['signal']} · {price_tag} {display_number(price,currency=True)}"
+            f" · 20s {display_number(item.get('gain_per_dollar',0),3)} USD/USD"
+            f" · 30d {display_number(item.get('gain_30c_per_dollar',0),3)} USD/USD"
+            f" · R:R {display_number(item.get('rr1'),2)}"
+            f" · styl {item.get('style_score', 0):.0f}"
+            f" · priorita {item.get('adaptive_score',item['entry_score']):.1f}")
+
+
 def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
-                       high_gain=False, outperforming=False, safe_earnings=False):
+                       high_gain=False, outperforming=False, safe_earnings=False, high_gain30=True):
     """Vybrané plodiny mají panel i při chybě dat nebo nesplnění filtru."""
     known = {item["ticker"]: item for item in raw}
     visible = {item["ticker"]: item for item in results}
@@ -2180,7 +2241,7 @@ def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_posit
             state = "Nesplňuje filtry" if filtered is not None else "Analýza není dostupná"
             with st.expander(f"{label} · {state}", expanded=False):
                 if filtered is not None:
-                    for reason in filter_exclusion_reasons(filtered, high_gain, outperforming, safe_earnings):
+                    for reason in filter_exclusion_reasons(filtered, high_gain, outperforming, safe_earnings, high_gain30):
                         st.info(reason)
                     st.caption("Pro zobrazení úplné analýzy vypněte příslušný filtr. Filtry nemění technická pravidla nákupu.")
                 else:
@@ -2193,7 +2254,7 @@ def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_posit
         assessment = assess_trade_action(item, held=st.session_state.get(f"held_{mode}_{ticker}", False),
             position_stop=st.session_state.get(f"held_stop_{mode}_{ticker}"),
             position_target=st.session_state.get(f"held_target_{mode}_{ticker}"))
-        with st.expander(f"{label} · {assessment['action_label']} · trend {assessment['trend_label']} · {display_number(item['price'], 2, currency=True)}", expanded=False):
+        with st.expander(ticker_summary(item), expanded=False):
             render_instrument(item, capital, risk_pct, max_position_pct)
 
 
@@ -2201,26 +2262,35 @@ def main():
     st.set_page_config(page_title="Klondike · Akcie a zemědělské komodity", page_icon="📈", layout="wide",
                        initial_sidebar_state="expanded")
     apply_design()
-    st.caption("Verze 2026-10-15-R4 · Akcie + zemědělské komodity")
+    st.caption("Verze 2026-10-24-R5 · Osobní filtr, adaptivní učení, PRE/POST")
     mode_label = st.radio("Část aplikace", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
     mode = "crops" if mode_label == "Zemědělské komodity" else "stocks"
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
                            key="crop_horizon") if mode == "crops" else 5
     activate_profile(mode, horizon)
     title = "Zemědělské komodity" if mode == "crops" else "Akciový skener"
-    detail = ("Pšenice · Kukuřice · Sója · Počasí · Sezónnost · Obchodní plán" if mode == "crops" else
-              "Podpory a trend · Opční objem · Sezónnost · Obchodní plán")
+    detail = ("Pšenice · Kukuřice · Sója · Počasí · Sezónnost · Rizikový plán" if mode == "crops" else
+              "Supporty · Riziko pozice · PRE/POST · Adaptivní učení")
     st.markdown(f'''<div class="hero"><div class="eyebrow">KLONDIKE · SPOT SWING</div>
         <h1>{title}</h1><p>{detail}</p></div>''', unsafe_allow_html=True)
-    st.caption(f"Signály z dokončených denních svíček · modelový horizont {horizon} obchodních dnů · "
-               "ceny nejsou živé kotace. W1/H4 aplikace automaticky nevyhodnocuje.")
+    st.caption(f"Technická hypotéza z dokončených denních svíček · horizont {horizon} seancí · "
+               "ceny PRE/POST jsou oddělené a slouží ke kontrole aktuálního vstupu. "
+               "W1/H4 a intradenní potvrzení aplikace automaticky nevyhodnocuje.")
     sb = get_supabase()
+    adaptive_sb = get_adaptive_supabase()
     with st.sidebar:
         if mode == "stocks":
             st.header("🔎 Výběr akcií")
             custom = st.text_input("Přidat burzovní symbol (ticker)", "", placeholder="Např. NFLX nebo AVGO",
                                    key="custom_ticker").upper().strip()
-            tickers = DEFAULT_TICKERS.copy()
+            groups = st.multiselect("Sledované skupiny", list(STOCK_GROUPS),
+                                    default=list(STOCK_GROUPS), key="stock_groups",
+                                    help="Seznam rozšířen o banky, pojišťovny, těžaře, distributory "
+                                         "a kandidáty střední kapitalizace. Likvidita se ověřuje při skenu.")
+            suggested = list(dict.fromkeys(t for group in groups for t in STOCK_GROUPS[group]))
+            tickers = st.multiselect("Tickery pro tento sken (omezíte tím počet požadavků)",
+                                    suggested, default=[t for t in DEFAULT_TICKERS if t in suggested],
+                                    key="stock_selected_tickers")
             if custom:
                 if is_valid_ticker(custom):
                     if custom not in tickers:
@@ -2236,8 +2306,13 @@ def main():
             st.caption("Panel každé vybrané plodiny zůstává viditelný i při chybě dat nebo nesplnění filtru a vysvětlí důvod.")
         st.divider()
         st.subheader("Filtry zobrazení")
-        high_gain = st.toggle("Zisk / 1 USD ≥ 0,06 USD", value=mode == "stocks", key=f"filter_high_gain_{mode}",
-                              help="Prostor k nejvyšší závěrečné ceně posledních 20 seancí alespoň 6 %. Není to očekávaný zisk.")
+        high_gain = st.toggle("20 seancí · zisk / 1 USD ≥ 0,06 USD", value=False,
+                              key=f"filter_high_gain_{mode}",
+                              help="Prostor k nejvyšší dokončené závěrečné ceně za 20 seancí, nikoli predikce.")
+        high_gain30 = st.toggle("30 kal. dnů · zisk / 1 USD ≥ 0,15 USD", value=True,
+                              key=f"filter_high_gain30_{mode}",
+                              help="Prostor k nejvyšší dokončené závěrečné ceně za posledních 30 kalendářních dnů "
+                                   "proti poslední referenční ceně. Oba filtry lze kombinovat.")
         outperforming = st.toggle("Pouze instrumenty překonávající koš ETC" if mode == "crops" else "Pouze akcie překonávající S&P 500",
                                   value=False, key=f"filter_outperforming_{mode}",
                                   help="Kladná relativní síla za 30 obchodních seancí vůči koši ETC, nebo vůči ETF SPY u akcií.")
@@ -2250,16 +2325,20 @@ def main():
             st.caption("Srovnávací koš tvoří všechna tři ETC se stejnou váhou. Sledovaný instrument je součástí koše.")
             st.caption("Počasí: Open-Meteo, soubor předpovědí GFS. Chybějící, neúplná nebo starší data blokují nový nákup.")
         st.divider()
-        st.caption("Zdroj cen: Yahoo Finance · Filtry lze kdykoli vypnout. Změna filtrů upraví již načtený přehled.")
-        st.caption("⚪ Supabase není připojena. Skener je dostupný bez historie." if sb is None else "🟢 Supabase je nakonfigurována.")
+        st.caption("Zdroj cen: Yahoo Finance, včetně dostupných PRE/POST 5minutových hodnot pro akcie. "
+                   "Referenční kotace může být zpožděná. Změna filtrů upraví již načtený přehled.")
+        st.caption("⚪ Supabase historie není připojena." if sb is None else "🟢 Supabase historie je připojena.")
+        st.caption("⚪ Adaptivní učení nemá zabezpečené DB připojení." if adaptive_sb is None
+                   else "🟢 Adaptivní databáze připojena (server-side).")
     tab_scan, tab_history, tab_learning = st.tabs([
         "🌾 Přehled plodin" if mode == "crops" else "🔎 Přehled akcií", "🗄️ Historie signálů", "🧠 Vyhodnocení signálů"])
     with tab_scan:
         with st.expander("💰 Nastavení velikosti pozice", expanded=False):
             c1, c2, c3 = st.columns(3)
-            capital = c1.number_input("Kapitál (USD)", min_value=100.0, value=5000.0, step=500.0, key="capital")
-            risk_pct = c2.slider("Riziko na obchod (%)", 0.25, 3.0, 1.0, 0.25, key="risk_pct")
+            capital = c1.number_input("Kapitál (USD)", min_value=100.0, value=24000.0, step=500.0, key="capital")
+            risk_pct = c2.slider("Riziko na obchod (%)", 0.25, 3.0, 2.0, 0.25, key="risk_pct")
             max_position_pct = c3.slider("Maximální velikost pozice (%)", 5, 100, 25, 5, key="max_position_pct")
+            st.caption("2 % kapitálu je pracovní rizikový limit pro CELOU pozici; nikoli pro každou tranši zvlášť.")
         left, right = st.columns([3, 1])
         left.subheader("Tržní sken")
         run = right.button("Spustit sken plodin" if mode == "crops" else "Spustit sken akcií",
@@ -2276,10 +2355,15 @@ def main():
                 raw = parallel_scan(tickers, spy, max_workers=4, progress_cb=update_progress,
                                     mode=mode, weather_contexts=weather_contexts, holding_days=horizon,
                                     diagnostics=diagnostics)
-                raw.sort(key=lambda item: (item["entry_score"], item["quality_score"]), reverse=True)
+                update_adaptive_outcomes(adaptive_sb)
+                learned_history = load_adaptive_resolved(adaptive_sb, mode, horizon)
+                raw = apply_adaptive_ranking(raw, learned_history)
+                snapshots_ok = save_adaptive_snapshots(adaptive_sb, raw)
+                st.session_state.adaptive_save_status = ("Adaptivní snímky uloženy." if snapshots_ok
+                    else "Adaptivní snímky nejsou ukládány (chybí služba, migrace nebo oprávnění).")
                 st.session_state.update(results=raw, regime=regime, regime_score=score, scan_has_run=True,
                                         scan_total=len(tickers), scan_diagnostics=diagnostics, scanned_tickers=list(tickers), scan_finished=datetime.now(ZoneInfo("Europe/Prague")).strftime("%d. %m. %Y %H:%M"))
-                visible = filter_results(raw, high_gain, outperforming, safe_earnings)
+                visible = filter_results(raw, high_gain, outperforming, safe_earnings, high_gain30)
                 # Jeden zápis na explicitní sken; změny widgetů zápis neopakují.
                 saved = save_signals_bulk(sb, visible)
                 if sb is None:
@@ -2305,14 +2389,16 @@ def main():
             benchmark = "koš zemědělských ETC" if mode == "crops" else "SPY"
             st.info(f"{icon} **Tržní režim ({benchmark}):** {regime_label} · skóre {st.session_state.regime_score}/5")
         raw = st.session_state.results
-        results = filter_results(raw, high_gain, outperforming, safe_earnings)
+        results = filter_results(raw, high_gain, outperforming, safe_earnings, high_gain30)
         if st.session_state.scan_has_run:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Analyzované plodiny" if mode == "crops" else "Analyzované akcie", len(raw))
             c2.metric("Instrumenty splňující filtry" if mode == "crops" else "Akcie splňující filtry", len(results))
             c3.metric("Nákupní zóna", sum(item["signal"] == buy_signal(mode, horizon) for item in results))
             c4.metric("Průměrná kvalita", display_number(np.mean([i["quality_score"] for i in results]), 1) if results else "—")
-            st.caption(f"Poslední sken: {st.session_state.get('scan_finished', '—')} · {st.session_state.get('save_status', '')}")
+            st.caption(f"Poslední sken: {st.session_state.get('scan_finished', '—')} · "
+                       f"{st.session_state.get('save_status','')} · "
+                       f"{st.session_state.get('adaptive_save_status','')}")
             skipped = st.session_state.get("scan_total", len(raw)) - len(raw)
             if skipped:
                 st.caption(f"Počet instrumentů bez dostatečných cenových dat nebo s chybou: {skipped}.")
@@ -2325,7 +2411,7 @@ def main():
                 st.markdown("### Podrobnosti jednotlivých plodin" if mode == "crops" else "### Podrobnosti jednotlivých akcií")
                 st.caption("Rozbalením panelu zobrazíte analýzu nebo důvod její nedostupnosti.")
                 render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
-                                   high_gain, outperforming, safe_earnings)
+                                   high_gain, outperforming, safe_earnings, high_gain30)
             if mode == "stocks" and st.session_state.get("scan_diagnostics"):
                 with st.expander("Instrumenty s neúplnými daty", expanded=False):
                     for ticker, reason in st.session_state.scan_diagnostics.items():
@@ -2335,7 +2421,9 @@ def main():
     with tab_history:
         render_history(sb, mode, horizon)
     with tab_learning:
-        render_learning(sb, mode, horizon)
+        render_adaptive_learning(adaptive_sb, mode, horizon)
+        with st.expander("Původní kontrolní simulace historických signálů", expanded=False):
+            render_learning(sb, mode, horizon)
 
 
 if __name__ == "__main__":

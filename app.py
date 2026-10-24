@@ -1,4 +1,4 @@
-# VERZE: AKCIE + ZEMEDELSKE KOMODITY | 2026-10-15-R4
+# VERZE: KLONDIKE R5.1 | 2026-10-24 | 20s/30d HIGH + PRE/POST
 """Klondike Spot Scanner — přehledná edice pro akcie a zemědělské komodity.
 
 Spuštění: streamlit run app.py
@@ -208,6 +208,72 @@ def extended_market_quote(ticker: str, latest_daily_date=None):
     except Exception as exc:
         log.info("Mimoburzovní data %s nedostupná: %s", ticker, exc)
         return None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def extended_30day_high(ticker: str, window_start: str, window_end: str):
+    """Maximum of real intraday High in the 30-calendar-day window, PRE/REG/POST.
+
+    Yahoo 60-minute bars are used only as a historical high supplement to daily
+    OHLC.  Bars with unknown timezone or missing/zero reported volume are not
+    treated as executable observations. Missing data must not imply full
+    pre/post coverage.
+    """
+    try:
+        bars = yf.Ticker(ticker).history(period="45d", interval="60m",
+                                        prepost=True, auto_adjust=True)
+        if bars is None or bars.empty or "High" not in bars:
+            return None
+        idx = pd.DatetimeIndex(bars.index)
+        if idx.tz is None:
+            return None
+        idx = idx.tz_convert("America/New_York")
+        first = pd.Timestamp(window_start).date()
+        last = pd.Timestamp(window_end).date()
+        mask = (idx.date >= first) & (idx.date <= last)
+        minute = idx.hour * 60 + idx.minute
+        mask &= (minute >= 4 * 60) & (minute < 20 * 60)
+        if "Volume" in bars:
+            mask &= (pd.to_numeric(bars["Volume"], errors="coerce").fillna(0).to_numpy() > 0)
+        highs = pd.to_numeric(bars.loc[mask, "High"], errors="coerce")
+        highs = highs[(highs > 0) & np.isfinite(highs)]
+        return float(highs.max()) if not highs.empty else None
+    except Exception as exc:
+        log.info("Historická PRE/POST maxima %s nejsou dostupná: %s", ticker, exc)
+        return None
+
+
+def calculate_peak_potentials(d, effective_price, ticker, mode, quote=None):
+    """20s: daily High over 20 sessions; 30d: daily + intraday High.
+
+    The 30-day interval is anchored to the latest available quote's US trading
+    date, or to the last completed daily session when no quote is available.
+    This avoids misrepresenting stale observations as current.
+    """
+    if not np.isfinite(effective_price) or effective_price <= 0:
+        return np.nan, np.nan, "nedostupná cena"
+    high20 = float(pd.to_numeric(d["High"].tail(20), errors="coerce").max())
+    last_day = pd.Timestamp(d.index[-1]).date()
+    anchor = last_day
+    if quote and quote.get("asof"):
+        try:
+            anchor = max(last_day, pd.Timestamp(quote["asof"]).tz_convert("America/New_York").date())
+        except (ValueError, TypeError):
+            pass
+    start = anchor - timedelta(days=29)
+    dates = pd.to_datetime(d.index).date
+    recent = d.loc[(dates >= start) & (dates <= anchor)]
+    daily_peak = safe_float(pd.to_numeric(recent["High"], errors="coerce").max(), np.nan)
+    peak = daily_peak
+    source = "D1 High (PRE/POST historie nedostupná)" if mode == "stocks" else "D1 High"
+    if mode == "stocks":
+        extra = extended_30day_high(ticker, start.isoformat(), anchor.isoformat())
+        if extra is not None and np.isfinite(extra):
+            peak = max(daily_peak, extra) if np.isfinite(daily_peak) else extra
+            source = "D1 + dostupná PRE/REG/POST High"
+    return (max(0.0, high20 / effective_price - 1),
+            max(0.0, peak / effective_price - 1) if np.isfinite(peak) else np.nan,
+            source)
 
 
 def personal_style_score(item):
@@ -1650,12 +1716,8 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
     events = get_corporate_events(ticker) if mode == "stocks" else {}
     quote = extended_market_quote(ticker, last_day) if mode == "stocks" else None
     effective_price = quote["price"] if quote is not None else float(x["Close"])
-    # An actual 30 calendar day lookback, not 30 trading sessions.
-    from_day = last_day - timedelta(days=29)
-    recent30 = d.loc[pd.to_datetime(d.index).date >= from_day]
-    gain_per_dollar = max(0.0, float(d["Close"].tail(20).max()) / effective_price - 1)
-    gain_30c_per_dollar = (max(0.0, float(recent30["Close"].max()) / effective_price - 1)
-                            if not recent30.empty else np.nan)
+    gain_per_dollar, gain_30c_per_dollar, gain_30_source = calculate_peak_potentials(
+        d, effective_price, ticker, mode, quote)
     patterns = detect_patterns(d)
     structure = analyze_market_structure(d)
 
@@ -1665,6 +1727,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
         "corporate_events": events,
         "gain_per_dollar": gain_per_dollar,
         "gain_30c_per_dollar": gain_30c_per_dollar,
+        "gain_30_source": gain_30_source,
         "extended_quote": quote,
         "effective_price": effective_price,
         "name":         ticker,
@@ -2010,10 +2073,13 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
         st.warning("Objemová data nejsou dostatečná pro výpočet poměru objemů. Podmínky likvidity nadále blokují nový nákup.")
 
     g1, g2 = st.columns(2)
-    g1.metric("Potenciál k maximu 20 seancí / 1 USD", f"{display_number(item['gain_per_dollar'], 3, currency=True)}")
-    g2.metric("Potenciál k maximu 30 kal. dnů / 1 USD", f"{display_number(item['gain_30c_per_dollar'], 3, currency=True)}")
-    st.caption("Historický prostor k dřívější nejvyšší závěrečné ceně, přepočítaný z "
-               "poslední dostupné referenční ceny (případně PRE/POST). Není to očekávaný zisk.")
+    g1.metric("Potenciál k D1 High za 20 seancí / 1 USD", f"{display_number(item['gain_per_dollar'], 3, currency=True)}")
+    g2.metric("Potenciál k High za 30 kal. dnů / 1 USD", f"{display_number(item['gain_30c_per_dollar'], 3, currency=True)}")
+    st.caption("20s = maximum denní High za 20 seancí. 30d = maximum High za 30 kalendářních "
+               "dnů, včetně dostupných PRE/POST hodinových svíček. "
+               f"Zdroj 30d: {item.get('gain_30_source', 'nezjištěn')}. "
+               "Oba ukazatele jsou historické vzdálenosti, nikoli předpověď zisku; "
+               "mohou být shodné, pokud mají stejné maximum.")
     render_personal_decision(item, capital, risk_pct, max_position_pct)
 
     st.markdown("#### 📈 Cena, klouzavé průměry a obchodní úrovně")
@@ -2205,9 +2271,9 @@ def scan_weather_contexts(tickers, progress=None):
 def filter_exclusion_reasons(item, high_gain, outperforming, safe_earnings, high_gain30=True):
     reasons = []
     if high_gain and safe_float(item.get("gain_per_dollar"), -1) < .06:
-        reasons.append("Potenciál k 20seančnímu maximu nedosahuje 0,06 USD / 1 USD.")
+        reasons.append("Potenciál k D1 High za 20 seancí nedosahuje 0,06 USD / 1 USD.")
     if high_gain30 and safe_float(item.get("gain_30c_per_dollar"), -1) < .15:
-        reasons.append("Potenciál k maximu posledních 30 kalendářních dnů nedosahuje 0,15 USD / 1 USD.")
+        reasons.append("Potenciál k High za 30 kalendářních dnů nedosahuje 0,15 USD / 1 USD.")
     if outperforming and safe_float(item.get("rs_30d"), 0) <= 0:
         reasons.append("Instrument nepřekonává srovnávací koš za 30 seancí.")
     if safe_earnings and earnings_in_window(item.get("corporate_events", {})):
@@ -2220,8 +2286,8 @@ def ticker_summary(item):
     price_tag = quote["kind"] if quote else "D1"
     price = item.get("effective_price",item["price"])
     return (f"{item['ticker']} · {item['signal']} · {price_tag} {display_number(price,currency=True)}"
-            f" · 20s {display_number(item.get('gain_per_dollar',0),3)} USD/USD"
-            f" · 30d {display_number(item.get('gain_30c_per_dollar',0),3)} USD/USD"
+            f" · 20s High {display_number(item.get('gain_per_dollar',0),3)} USD/USD"
+            f" · 30d High {display_number(item.get('gain_30c_per_dollar',0),3)} USD/USD"
             f" · R:R {display_number(item.get('rr1'),2)}"
             f" · styl {item.get('style_score', 0):.0f}"
             f" · priorita {item.get('adaptive_score',item['entry_score']):.1f}")

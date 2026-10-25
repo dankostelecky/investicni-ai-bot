@@ -33,7 +33,7 @@ log = logging.getLogger("klondike")
 # USA-listed USD stocks. Mid-cap membership and liquidity vary over time:
 # hard liquidity/price checks are performed on every scan, never assumed.
 STOCK_GROUPS = {
-    "Základní výběr": ["VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT",
+    "Základní výběr": ["VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT",  "MO",
                        "AMZN", "META", "TSLA", "BRK-B", "WMT", "MU", "JPM", "ORCL",
                        "XOM", "AMD", "JNJ", "COST", "HD", "UNH", "BAC", "IBM", "INTC", "BABA"],
     "Banky": ["WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "FITB", "KEY"],

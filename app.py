@@ -2334,11 +2334,10 @@ def main():
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
                            key="crop_horizon") if mode == "crops" else 5
     activate_profile(mode, horizon)
-    title = "Zemědělské komodity" if mode == "crops" else "Akciový skener"
-    detail = ("Pšenice · Kukuřice · Sója · Počasí · Sezónnost · Rizikový plán" if mode == "crops" else
-              "Supporty · Riziko pozice · PRE/POST · Adaptivní učení")
-    st.markdown(f'''<div class="hero"><div class="eyebrow">KLONDIKE · SPOT SWING</div>
-        <h1>{title}</h1><p>{detail}</p></div>''', unsafe_allow_html=True)
+   
+
+
+  
     st.caption(f"Technická hypotéza z dokončených denních svíček · horizont {horizon} seancí · "
                "ceny PRE/POST jsou oddělené a slouží ke kontrole aktuálního vstupu. "
                "W1/H4 a intradenní potvrzení aplikace automaticky nevyhodnocuje.")

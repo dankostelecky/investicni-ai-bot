@@ -2396,7 +2396,7 @@ def main():
             st.caption("2 % kapitálu je pracovní rizikový limit pro CELOU pozici; nikoli pro každou tranši zvlášť.")
         left, right = st.columns([3, 1])
         left.subheader("Tržní sken")
-        run = right.button("Spustit sken plodin" if mode == "crops" else "Sken přednastavených akcií",
+        run = right.button("Spustit sken plodin" if mode == "crops" else "Sken nastavených akcií",
                            type="primary", use_container_width=True, key="run_scan", disabled=not tickers)
         if run:
             progress = st.progress(0.0, text="Načítám ceny a počasí…" if mode == "crops" else "Načítám srovnávací index a analyzuji akcie…")

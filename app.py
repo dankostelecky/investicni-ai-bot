@@ -2348,14 +2348,7 @@ def main():
             st.header("🔎 Výběr akcií")
             custom = st.text_input("Přidat burzovní symbol (ticker)", "", placeholder="Např. NFLX nebo AVGO",
                                    key="custom_ticker").upper().strip()
-            groups = st.multiselect("Sledované skupiny", list(STOCK_GROUPS),
-                                    default=list(STOCK_GROUPS), key="stock_groups",
-                                    help="Seznam rozšířen o banky, pojišťovny, těžaře, distributory "
-                                         "a kandidáty střední kapitalizace. Likvidita se ověřuje při skenu.")
-            suggested = list(dict.fromkeys(t for group in groups for t in STOCK_GROUPS[group]))
-            tickers = st.multiselect("Tickery pro tento sken (omezíte tím počet požadavků)",
-                                    suggested, default=[t for t in DEFAULT_TICKERS if t in suggested],
-                                    key="stock_selected_tickers")
+          
             if custom:
                 if is_valid_ticker(custom):
                     if custom not in tickers:

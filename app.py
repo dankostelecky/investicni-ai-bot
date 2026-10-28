@@ -1,4 +1,4 @@
-# VERZE: KLONDIKE R5.1 | 2026-10-24 | 20s/30d HIGH + PRE/POST
+# VERZE: KLONDIKE R5.2 | 2026-10-28 | bez výběrových rámečků a horního banneru
 """Klondike Spot Scanner — přehledná edice pro akcie a zemědělské komodity.
 
 Spuštění: streamlit run app.py
@@ -33,7 +33,7 @@ log = logging.getLogger("klondike")
 # USA-listed USD stocks. Mid-cap membership and liquidity vary over time:
 # hard liquidity/price checks are performed on every scan, never assumed.
 STOCK_GROUPS = {
-    "Základní výběr": ["VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT",  "MO",
+    "Základní výběr": ["VMI", "CCJ", "AMBA", "CRSP", "NVDA", "AAPL", "GOOGL", "MSFT",
                        "AMZN", "META", "TSLA", "BRK-B", "WMT", "MU", "JPM", "ORCL",
                        "XOM", "AMD", "JNJ", "COST", "HD", "UNH", "BAC", "IBM", "INTC", "BABA"],
     "Banky": ["WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "FITB", "KEY"],
@@ -2328,16 +2328,12 @@ def main():
     st.set_page_config(page_title="Klondike · Akcie a zemědělské komodity", page_icon="📈", layout="wide",
                        initial_sidebar_state="expanded")
     apply_design()
-    st.caption("")
-    mode_label = st.radio("VERZE 6.0", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
+    st.caption("Verze 2026-10-28-R5.2 · Osobní filtr, adaptivní učení, PRE/POST")
+    mode_label = st.radio("Část aplikace", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
     mode = "crops" if mode_label == "Zemědělské komodity" else "stocks"
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
                            key="crop_horizon") if mode == "crops" else 5
     activate_profile(mode, horizon)
-   
-
-
-  
     st.caption(f"Technická hypotéza z dokončených denních svíček · horizont {horizon} seancí · "
                "ceny PRE/POST jsou oddělené a slouží ke kontrole aktuálního vstupu. "
                "W1/H4 a intradenní potvrzení aplikace automaticky nevyhodnocuje.")
@@ -2348,7 +2344,8 @@ def main():
             st.header("🔎 Výběr akcií")
             custom = st.text_input("Přidat burzovní symbol (ticker)", "", placeholder="Např. NFLX nebo AVGO",
                                    key="custom_ticker").upper().strip()
-          
+            # Pevný výchozí seznam bez výběrových rámečků v bočním panelu.
+            tickers = DEFAULT_TICKERS.copy()
             if custom:
                 if is_valid_ticker(custom):
                     if custom not in tickers:

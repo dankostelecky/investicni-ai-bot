@@ -2328,8 +2328,8 @@ def main():
     st.set_page_config(page_title="Klondike · Akcie a zemědělské komodity", page_icon="📈", layout="wide",
                        initial_sidebar_state="expanded")
     apply_design()
-    st.caption("Verze 2026-10-28-R5.2 · Osobní filtr, adaptivní učení, PRE/POST")
-    mode_label = st.radio("Část aplikace", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
+    st.caption("")
+    mode_label = st.radio("VERZE 6.0", ["Akcie", "Zemědělské komodity"], horizontal=True, key="asset_mode")
     mode = "crops" if mode_label == "Zemědělské komodity" else "stocks"
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
                            key="crop_horizon") if mode == "crops" else 5

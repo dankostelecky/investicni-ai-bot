@@ -1,4 +1,4 @@
-# VERZE: KLONDIKE R5.2 | 2026-10-28 | bez výběrových rámečků a horního banneru
+# VERZE: KLONDIKE R6.0 | 2026-10-29 | agresivní spot swing: crowd / učebnice / osobní styl
 """Klondike Spot Scanner — přehledná edice pro akcie a zemědělské komodity.
 
 Spuštění: streamlit run app.py
@@ -312,7 +312,7 @@ def risk_quote_context(item):
         return "VAROVÁNÍ", "Aktuální referenční cena je na invalidaci nebo pod ní.", rr
     if not (np.isfinite(lower) and np.isfinite(upper) and lower <= value <= upper):
         return "MIMO VSTUP", "Aktuální referenční cena leží mimo povolenou nákupní zónu.", rr
-    if not np.isfinite(rr) or rr < STRATEGY["min_rr"]:
+    if not np.isfinite(rr) or rr < item.get("min_rr", STRATEGY["min_rr"]):
         return "MIMO VSTUP", "Aktuální poměr potenciálního zisku k riziku nestačí.", rr
     return "V ZÓNĚ", "Referenční cena vyhovuje; intradenní potvrzení nebylo automaticky ověřeno.", rr
 
@@ -687,7 +687,7 @@ def check_execution_price(item, proposed):
                      if item.get("mode") == "crops" else True)
     ok = bool(item["buy_allowed"] and context_fresh and np.isfinite(proposed)
               and lower - 1e-9 <= proposed <= upper + 1e-9
-              and np.isfinite(rr) and rr >= STRATEGY["min_rr"] - 1e-9)
+               and np.isfinite(rr) and rr >= item.get("min_rr", STRATEGY["min_rr"]) - 1e-9)
     return ok, rr
 
 def calculate_entry_engine(d: pd.DataFrame, scores: dict,
@@ -760,7 +760,7 @@ def calculate_entry_engine(d: pd.DataFrame, scores: dict,
     reason = ("Všechny vstupní podmínky jsou splněny podle poslední dokončené denní svíčky."
               if eligible else "Nesplněno: " + "; ".join(k for k, v in checks.items() if not v))
     result = {
-        "support": support, "resistance": resistance,
+        "support": support, "support_floor": levels["support_floor"], "resistance": resistance,
         "support_touches": levels["support_touches"], "support_age": levels["support_age"],
         "aggressive_entry": zone_high, "preferred_entry": entry,
         "conservative_entry": support, "zone_low": zone_low, "zone_high": zone_high,
@@ -1059,6 +1059,15 @@ def assess_trade_action(item: dict, held=False, position_stop=None, position_tar
     Volitelné mimoburzovní kotace slouží jen ke kontrole aktuálního rizika.
     """
     result = {"trend_label": "BÝČÍ" if item["trend_ok"] else "NEPOTVRZENÝ / SLABÝ"}
+    if not held and item.get("mode") == "stocks" and item.get("aggressive_model_version"):
+        context, reason, _ = risk_quote_context(item)
+        if not item.get("buy_allowed") or context != "V ZÓNĚ":
+            return {**result, "action_label": "VYČKAT / NEVSTUPOVAT",
+                    "action_reason": item.get("decision_reason", "") + " " + reason}
+        return {**result, "action_label": item.get("decision_action", "NAKOUPIT"),
+                "action_reason": item.get("decision_reason", "") + " " + reason}
+    if held and item.get("mode") == "stocks" and item.get("aggressive_model_version"):
+        return {**result, **aggressive_held_review(item, position_stop, position_target)}
     if not held:
         if item.get("mode") == "crops" and not weather_is_current(item.get("weather_context", {})):
             return {**result, "action_label": "ČEKAT / NEVSTUPOVAT",
@@ -1094,6 +1103,292 @@ def assess_trade_action(item: dict, held=False, position_stop=None, position_tar
     if not (stop > 0 or target > 0):
         reason += " Nebyla zadána vlastní úroveň stopu ani cílová cena."
     return {**result, "action_label": label, "action_reason": reason}
+
+
+# ---------------------- AGRESIVNÍ SPOT SWING R6 ----------------------
+# Tři ODDĚLENÉ hypotézy: pozorovatelné chování trhu, učebnicová
+# technická analýza a historicky popsané preference obchodníka.
+# OHLCV NENÍ skutečný order-flow ani evidence o identitě účastníků.
+AGGRESSIVE_MODEL_VERSION = "R6.0-crowd-textbook-personal"
+R6_BUY_SIGNAL = "AGRESIVNÍ NÁKUP · R6"
+CROP_LEARNING_MODEL_VERSION = "adaptive-r1"  # Stávající model plodin pokračuje beze změny.
+AGGRESSIVE_MIN_RR = 1.25
+AGGRESSIVE_WEIGHTS = {"crowd": .40, "textbook": .35, "personal": .25}
+
+
+def crowd_behavior_proxy(d, relative_strength=0.0):
+    """OHLCV odhad tlaků; nikdy z něj nevyvozujeme konkrétní transakce.
+
+    Všechny vstupy jsou pouze UZAVŘENÉ D1 svíčky. Skóre je heuristika,
+    nikoli kalibrovaná pravděpodobnost a není skutečným order-flow.
+    """
+    neutral = {"score": 50.0, "label": "NEZNÁMÁ PŘEVAHA", "pressure": np.nan,
+               "clv": np.nan, "accumulation_days": 0, "distribution_days": 0,
+               "confidence": "NÍZKÁ", "notes": ["Objemová historie není dostatečná."]}
+    if d is None or len(d) < 22:
+        return neutral
+    h = d.tail(11).copy()
+    volume = pd.to_numeric(h["Volume"], errors="coerce")
+    if volume.isna().any() or (volume <= 0).any():
+        return neutral
+    closes = pd.to_numeric(h["Close"], errors="coerce")
+    high = pd.to_numeric(h["High"], errors="coerce")
+    low = pd.to_numeric(h["Low"], errors="coerce")
+    direction = np.sign(closes.diff().iloc[1:].to_numpy(dtype=float))
+    vols = volume.iloc[1:].to_numpy(dtype=float)
+    total = float(vols.sum())
+    if total <= 0:
+        return neutral
+    pressure = float(np.dot(direction, vols) / total)
+    spread = (high - low).replace(0, np.nan)
+    clv = ((2*closes - high - low) / spread).clip(-1, 1).iloc[1:].fillna(0).to_numpy(dtype=float)
+    clv_weighted = float(np.dot(clv, vols) / total)
+    baseline = safe_float(pd.to_numeric(d["Volume"].iloc[-21:-1], errors="coerce").mean(), 0)
+    if baseline <= 0:
+        return neutral
+    relative = vols / baseline
+    accumulation = int(np.sum((direction > 0) & (clv > .35) & (relative >= 1.15)))
+    distribution = int(np.sum((direction < 0) & (clv < -.35) & (relative >= 1.15)))
+    rs = safe_float(relative_strength, 0)
+    score = float(np.clip(50 + 23*pressure + 16*clv_weighted +
+                          4*(accumulation-distribution) + 7*np.tanh(rs/8), 0, 100))
+    label = "PŘEVAHA POPTÁVKY (PROXY)" if score >= 59 else (
+        "PŘEVAHA NABÍDKY (PROXY)" if score <= 41 else "SMÍŠENÉ CHOVÁNÍ")
+    notes = [f"Objemový tlak 10D: {pressure:+.2f} (proxy růstových/poklesových seancí).",
+             f"Poloha uzavíracích cen v denním rozpětí: {clv_weighted:+.2f}.",
+             f"Dny s vyšším objemem: akumulační {accumulation}, distribuční {distribution}.",
+             f"Relativní síla vůči srovnávacímu indexu: {rs:+.2f} p. b."]
+    return {"score": round(score, 1), "label": label, "pressure": round(pressure, 3),
+            "clv": round(clv_weighted, 3), "accumulation_days": accumulation,
+            "distribution_days": distribution, "confidence": "STŘEDNÍ", "notes": notes}
+
+
+def textbook_trade_perspective(item):
+    """Učebnicové technické postupy, nezávisle na osobním stylu."""
+    d = item["data"]
+    price = safe_float(item.get("price"))
+    atr = safe_float(item.get("atr"))
+    support = safe_float(item.get("support"))
+    rsi = safe_float(item.get("rsi"))
+    vol = safe_float(item.get("volume_ratio"), 0)
+    score, reasons = 50, []
+    if price > safe_float(item.get("ema20")):
+        score += 9; reasons.append("Cena nad EMA20")
+    else:
+        score -= 8; reasons.append("Cena pod EMA20")
+    if safe_float(item.get("ema20")) > safe_float(item.get("ema50")):
+        score += 12; reasons.append("EMA20 nad EMA50")
+    else:
+        score -= 10; reasons.append("EMA20 pod EMA50")
+    if safe_float(item.get("macd_hist"), 0) > 0:
+        score += 8
+    else:
+        score -= 7
+    if np.isfinite(support) and atr > 0 and support <= price <= support + 1.2*atr:
+        score += 13; reasons.append("Cena v širší oblasti podpory")
+    if int(item.get("support_touches") or 0) >= 2:
+        score += 7; reasons.append("Podpora byla opakovaně testována")
+    if 35 <= rsi <= 69:
+        score += 5
+    elif rsi > 78:
+        score -= 11; reasons.append("RSI indikuje přehřátí")
+    if vol >= 1.2 and price > safe_float(d["Open"].iloc[-1]):
+        score += 8; reasons.append("Růstová svíčka se zvýšeným objemem")
+    if vol >= 1.5 and price < safe_float(d["Open"].iloc[-1]):
+        score -= 13; reasons.append("Silný poklesový objem")
+    if item.get("breakdown"):
+        score -= 16; reasons.append("Průlom 20denního minima")
+    if item.get("breakout") and vol >= 1.25:
+        score += 9; reasons.append("Průraz podpořený objemem")
+    if item.get("market_regime") == "BEARISH":
+        score -= 5; reasons.append("Širší akciový trh slábne, není to automatické veto")
+    score = round(float(np.clip(score, 0, 100)), 1)
+    return {"score": score, "label": "BÝČÍ" if score >= 63 else ("MEDVĚDÍ" if score <= 39 else "SMÍŠENÉ"),
+            "notes": reasons}
+
+
+def personal_trade_perspective(item):
+    """Odvozeno z rozhovorů; neověřený styl, nikoliv úspěšnost obchodů."""
+    score = float(personal_style_score(item))
+    notes = ["Preferovaný časný nákup u opakovaného supportu, bez honění růstu."]
+    if score >= 60:
+        notes.append("Příležitost odpovídá popsanému osobnímu způsobu hledání vstupu.")
+    elif score <= 35:
+        notes.append("Rozpor s popsaným stylem; samotný rozpor neblokuje nákup.")
+    else:
+        notes.append("Částečná shoda s osobním stylem.")
+    return {"score": score, "label": "VYSOKÁ SHODA" if score >= 60 else (
+            "NÍZKÁ SHODA" if score <= 35 else "ČÁSTEČNÁ SHODA"), "notes": notes}
+
+
+def aggressive_trade_plan(item, setup):
+    """Neměnná ex-ante invalidace, cesta k R:R a přípustný další open."""
+    price, atr = safe_float(item.get("price")), safe_float(item.get("atr"))
+    if not (price > 0 and np.isfinite(atr) and atr > 0):
+        return None
+    support = safe_float(item.get("support"))
+    floor = safe_float(item.get("support_floor"))
+    resistance = safe_float(item.get("resistance"))
+    if setup == "EARLY_SUPPORT":
+        if not (np.isfinite(support) and np.isfinite(floor) and floor > 0):
+            return None
+        stop = min(floor - .30*atr, price - .90*atr)
+        risk = price - stop
+        if not (stop > 0 and risk > 0):
+            return None
+        # Rezistence je první realistický cíl; bez ní pouze ilustrační 2R.
+        real_resistance = bool(np.isfinite(resistance) and resistance > price)
+        target = (resistance - .10*atr) if real_resistance else price + 2.0*risk
+        target_kind = "Rezistence - 0,1 ATR" if real_resistance else "Modelová projekce 2R (rezistence neurčena)"
+        lower = max(support - .15*atr, stop + .5*atr)
+        upper = price + .35*atr
+    elif setup == "MOMENTUM":
+        recent_low = safe_float(item["data"]["Low"].iloc[-5:].min())
+        if not np.isfinite(recent_low):
+            return None
+        stop = min(recent_low - .15*atr, price - 1.2*atr)
+        risk = price - stop
+        if not (stop > 0 and risk > 0):
+            return None
+        target = price + 2.2*risk
+        target_kind = "Modelová projekce 2,2R (nikoliv ověřená rezistence)"
+        lower, upper = price - .35*atr, price + .25*atr
+    else:
+        return None
+    risk = price - stop
+    # Prudký gap nebo mimořádně vzdálená invalidace není normální swing setup.
+    # Nejde o omezení diverzifikace, ale o věrohodnost cenového plánu.
+    if risk > 3.2 * atr:
+        return None
+    rr = (target - price) / risk if risk > 0 else np.nan
+    if not np.isfinite(rr) or rr < AGGRESSIVE_MIN_RR:
+        return None
+    # Trváme na stejném objektivním stopu a cíli při jiném vstupu.
+    max_by_rr = (target + AGGRESSIVE_MIN_RR*stop) / (1 + AGGRESSIVE_MIN_RR)
+    upper = min(upper, max_by_rr)
+    lower = max(lower, stop + .01*atr)
+    if lower > upper or not (lower <= price <= upper):
+        return None
+    return {"entry": price, "stop": round(stop, 7), "target": round(target, 7),
+            "min_execution_price": round(lower, 7), "max_execution_price": round(upper, 7),
+            "rr": round(rr, 3), "target_kind": target_kind,
+            "risk_per_share": round(risk, 7)}
+
+
+def aggressive_decision(item, learned_adjust=0.0):
+    """Ex-ante návrh LONG nebo VYČKAT; žádný automatický obchod.
+
+    Záměrně není limit na podíl jedné akcie v portfoliu ani blokace dle SPY.
+    Kriterium spotové hotovosti je až v position_size. Neotvírá shorty.
+    """
+    crowd = item.get("crowd_view") or crowd_behavior_proxy(item["data"], item.get("rs_30d", 0))
+    textbook = item.get("textbook_view") or textbook_trade_perspective(item)
+    personal = item.get("personal_view") or personal_trade_perspective(item)
+    score = (AGGRESSIVE_WEIGHTS["crowd"] * crowd["score"] +
+             AGGRESSIVE_WEIGHTS["textbook"] * textbook["score"] +
+             AGGRESSIVE_WEIGHTS["personal"] * personal["score"] +
+             float(np.clip(safe_float(learned_adjust, 0), -8, 8)))
+    if item.get("seasonality_context", {}).get("entry_block"):
+        score -= 6  # Obvyklá sezónnost je varování, ne nepřekročitelný zákaz.
+    score = round(float(np.clip(score, 0, 100)), 1)
+    d = item["data"]
+    atr = safe_float(item.get("atr"))
+    price = safe_float(item.get("price"))
+    supp = safe_float(item.get("support"))
+    floor = safe_float(item.get("support_floor"))
+    volume_ratio = safe_float(item.get("volume_ratio"), 0)
+    close_position = ((price - float(d["Low"].iloc[-1])) /
+                      max(float(d["High"].iloc[-1] - d["Low"].iloc[-1]), 1e-9))
+    support_setup = bool(np.isfinite(supp) and np.isfinite(floor) and atr > 0 and
+                         supp <= price <= supp + 1.2*atr and price > floor and
+                         close_position >= .45 and not item.get("breakdown"))
+    prior20 = safe_float(d["High"].iloc[-21:-1].max()) if len(d) >= 22 else np.nan
+    momentum_setup = bool(np.isfinite(prior20) and price >= prior20*1.002 and
+                          volume_ratio >= 1.2 and crowd["score"] >= 59 and
+                          price > safe_float(item.get("ema20")))
+    setup = "EARLY_SUPPORT" if support_setup else ("MOMENTUM" if momentum_setup else "NONE")
+    plan = aggressive_trade_plan(item, setup)
+    # Dostupnost/ověření dat je povinné, ale SPY/RSI/individuální diverzifikace nejsou veta.
+    data_ok = bool(item.get("fresh_daily_data", False))
+    liquid = bool(safe_float(item.get("median_dollar_volume"), 0) >= STRATEGY["min_dollar_volume"])
+    final = bool(plan is not None and data_ok and liquid and
+                 crowd["confidence"] != "NÍZKÁ" and
+                 textbook["score"] >= 42 and crowd["score"] >= 43 and
+                 score >= (58 if setup == "EARLY_SUPPORT" else 63))
+    reasons = []
+    if not data_ok: reasons.append("Denní data nejsou dostatečně aktuální.")
+    if not liquid: reasons.append("Nedostatečný prokázaný dolarový objem.")
+    if setup == "NONE": reasons.append("Chybí časný odraz u supportu nebo objemově potvrzený průraz.")
+    if setup != "NONE" and plan is None: reasons.append("Nelze sestavit obhajitelný stop, cíl a vstupní pásmo s R:R alespoň 1,25.")
+    if score < (58 if setup == "EARLY_SUPPORT" else 63):
+        reasons.append("Kombinované skóre zatím nedosahuje prahu příslušného setupu.")
+    if crowd["score"] < 43: reasons.append("Pozorovaný objemový tlak vyznívá výrazně nepříznivě.")
+    if textbook["score"] < 42: reasons.append("Učebnicová technická kontrola je slabá.")
+    if not reasons:
+        reasons.append("Výchozí agresivní long setup splnil podmínky; finální exekuce závisí na ceně další seance.")
+    return {"crowd_view": crowd, "textbook_view": textbook, "personal_view": personal,
+            "decision_score": score, "setup": setup, "plan": plan,
+            "decision_action": ("NAKOUPIT · PRŮZKUMNĚ" if setup == "EARLY_SUPPORT" else
+                                 "NAKOUPIT · MOMENTUM") if final else "VYČKAT / NEVSTUPOVAT",
+            "decision_buy_allowed": final, "decision_reason": " ".join(reasons),
+            "agreement": ("SHODA VŠECH TŘÍ" if all(v["score"] >= 58 for v in (crowd,textbook,personal))
+                          else "ROZDÍLNÉ POHLEDY")}
+
+
+def apply_aggressive_stock_engine(item, learned_adjust=0.0):
+    """Integrace doporučení do již existujícího rendereru, učení a Supabase."""
+    out = dict(item)
+    out.setdefault("legacy_signal", out.get("signal"))
+    out["fresh_daily_data"] = bool(out.get("entry_checks", {}).get("Aktuální data z dokončených denních svíček", False))
+    proposal = aggressive_decision(out, learned_adjust)
+    out.update(proposal)
+    out["aggressive_model_version"] = AGGRESSIVE_MODEL_VERSION
+    if proposal["plan"] is not None:
+        plan = proposal["plan"]
+        out.update({"preferred_entry": plan["entry"], "stop": plan["stop"],
+                    "target1": plan["target"], "rr1": plan["rr"],
+                    "risk_per_share": plan["risk_per_share"],
+                    "min_execution_price": plan["min_execution_price"],
+                    "max_execution_price": plan["max_execution_price"],
+                    "min_rr": AGGRESSIVE_MIN_RR,
+                    "target_kind": plan["target_kind"]})
+    out["buy_allowed"] = proposal["decision_buy_allowed"]
+    out["signal"] = R6_BUY_SIGNAL if out["buy_allowed"] else "VYČKAT · R6 AGRESIVNÍ"
+    out["entry_reason"] = proposal["decision_reason"]
+    out["entry_score"] = proposal["decision_score"]
+    out["style_score"] = proposal["personal_view"]["score"]
+    out["strategy_version"] = "6.0"
+    return out
+
+
+def aggressive_held_review(item, stop=None, target=None):
+    """Pro držené long akcie rozhoduje vlastní invalidace + jasný vývoj ceny.
+
+    Model nezná skutečný nákup ani plán, dokud je uživatel nedoplní.
+    """
+    price = safe_float(item.get("effective_price"), safe_float(item.get("price")))
+    s = safe_float(stop, 0)
+    t = safe_float(target, 0)
+    quote = item.get("extended_quote") or {}
+    if s > 0 and price <= s:
+        if quote.get("kind") in {"PRE", "POST"}:
+            return {"action_label": "PROVĚŘIT STOP / PŘIPRAVIT PRODEJ",
+                    "action_reason": "Referenční PRE/POST cena je pod zadaným stopem; exekuci a spread ověř u brokera."}
+        return {"action_label": "PRODAT", "action_reason": "Dosažena uživatelem stanovená invalidace pozice."}
+    if t > 0 and price >= t:
+        return {"action_label": "ZVÁŽIT VÝBĚR ZISKU", "action_reason": "Cena dosáhla uživatelem zadaného cíle."}
+    d = item["data"]
+    if len(d) >= 3:
+        two_below = bool((d["Close"].tail(2) < d["EMA20"].tail(2)).all()) if "EMA20" in d else False
+    else:
+        two_below = False
+    crowd = item.get("crowd_view", {})
+    bearish = bool(crowd.get("score", 50) <= 37 and two_below and item.get("macd_hist", 0) < 0)
+    if bearish or (item.get("breakdown") and crowd.get("score", 50) < 44):
+        return {"action_label": "PRODAT / OVĚŘIT INVALIDACI",
+                "action_reason": "Distribuční tlak spolu s cenovým průlomem nebo více denním slábnutím; zkontroluj původní hypotézu."}
+    return {"action_label": "DRŽET / KONTROLOVAT",
+            "action_reason": "Z uzavřených denních dat nevyplývá potvrzená prodejní podmínka; vlastní stop má přednost."}
 
 # ---------------------- TRŽNÍ REŽIM ---------------------------
 def market_regime(spy: pd.DataFrame):
@@ -1164,20 +1459,19 @@ def calculate_scores(d: pd.DataFrame, spy: pd.DataFrame) -> dict:
 
 # ---------------------- ENTRY ENGINE --------------------------
 # ---------------------- POSITION SIZE -------------------------
-def position_size(capital, risk_pct, entry, stop, max_position_pct):
-    values = (capital, risk_pct, entry, stop, max_position_pct)
-    if (not all(np.isfinite(v) for v in values)
-            or capital <= 0 or entry <= 0 or stop <= 0 or stop >= entry):
+def position_size(capital, risk_pct, entry, stop):
+    """Bez koncentračního limitu: jen hotovost (spot bez páky) a uživatelovo riziko."""
+    values = (capital, risk_pct, entry, stop)
+    if (not all(np.isfinite(v) for v in values) or
+            capital <= 0 or not 0 < risk_pct <= 100 or
+            entry <= 0 or stop <= 0 or stop >= entry):
         return 0, 0.0, 0.0, 0.0
     max_risk = capital * risk_pct / 100
-    risk_per_share = max(entry - stop, 0.0001)
+    risk_per_share = entry - stop
     shares_by_risk = int(max_risk / risk_per_share)
-
-    max_position_value = capital * max_position_pct / 100
-    shares_by_capital = int(max_position_value / entry) if entry > 0 else 0
-
-    shares = max(0, min(shares_by_risk, shares_by_capital))
-    return shares, shares * entry, max_risk, risk_per_share
+    shares_by_cash = int(capital / entry)
+    shares = max(0, min(shares_by_risk, shares_by_cash))
+    return shares, shares*entry, max_risk, risk_per_share
 
 
 # ---------------------- SUPABASE ------------------------------
@@ -1255,7 +1549,8 @@ def load_learning_stats(sb, days: int = 90, mode="stocks", holding_days=5):
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
         response = sb.table("scanner_signals").select("*").gte(
-            "signal_date", cutoff).eq("signal", buy_signal(mode, holding_days)).execute()
+            "signal_date", cutoff).eq("signal", BUY_SIGNAL if mode == "stocks"
+                                        else buy_signal(mode, holding_days)).execute()
         df = pd.DataFrame(response.data or [])
         if df.empty:
             return df
@@ -1338,7 +1633,8 @@ def snapshot_signal(item):
     row = {
         "ticker": item["ticker"], "signal_date": pd.Timestamp(item["data"].index[-1]).date().isoformat(),
         "mode": item.get("mode", "stocks"), "horizon": int(item.get("holding_days", 5)),
-        "model_version": LEARNING_MODEL_VERSION,
+        "model_version": (LEARNING_MODEL_VERSION if item.get("mode") == "stocks"
+                          else CROP_LEARNING_MODEL_VERSION),
         "strategy_version": str(item.get("strategy_version", "4.8")),
         "signal": str(item.get("signal", "")), "buy_allowed": bool(item.get("buy_allowed", False)),
         "snapshot_close": safe_float(item.get("price")),
@@ -1356,7 +1652,12 @@ def snapshot_signal(item):
         "rr1": safe_float(item.get("rr1")),
         "price_type": (item.get("extended_quote") or {}).get("kind", "DAILY"),
         "price_time": (item.get("extended_quote") or {}).get("asof"),
-        "features": bucket_features(item),
+        "features": {**bucket_features(item),
+                     "setup": str(item.get("setup", "NONE")),
+                     "crowd_score": safe_float((item.get("crowd_view") or {}).get("score"), None),
+                     "textbook_score": safe_float((item.get("textbook_view") or {}).get("score"), None),
+                     "personal_score": safe_float((item.get("personal_view") or {}).get("score"), None),
+                     "model": item.get("aggressive_model_version", "legacy")},
     }
     for k, v in row.items():
         if isinstance(v, (float, np.floating)) and not np.isfinite(v):
@@ -1415,7 +1716,8 @@ def load_adaptive_resolved(sb, mode, horizon, limit=1000):
         # Filter same market and evaluation horizon to avoid mixing strategies.
         return (sb.table("scanner_adaptive_signals").select("*")
                 .eq("status", "RESOLVED").eq("mode", mode).eq("horizon", horizon)
-                .eq("model_version", LEARNING_MODEL_VERSION)
+                .eq("model_version", LEARNING_MODEL_VERSION if mode == "stocks"
+                    else CROP_LEARNING_MODEL_VERSION)
                 .order("resolved_at", desc=True).limit(limit).execute().data or [])
     except Exception as exc:
         log.warning("Nelze načíst modelovou historii: %s", exc)
@@ -1427,10 +1729,17 @@ def apply_adaptive_ranking(results, training):
     ranked = []
     for original in results:
         item = dict(original)
-        learned = learned_adjustment(item, training)
-        item["style_score"] = personal_style_score(item)
+        signal_day = pd.Timestamp(item["data"].index[-1]).date()
+        past = [r for r in training if r.get("resolved_at") and
+                pd.Timestamp(r["resolved_at"]).date() < signal_day]
+        learned = learned_adjustment(item, past)
+        if item.get("mode") == "stocks":
+            item = apply_aggressive_stock_engine(item, learned.get("adjustment", 0))
+            item["adaptive_score"] = item["decision_score"]
+        else:
+            item["style_score"] = personal_style_score(item)
+            item["adaptive_score"] = round(float(np.clip(float(item["entry_score"]) + learned["adjustment"], 0, 100)), 1)
         item["adaptive_learning"] = learned
-        item["adaptive_score"] = round(float(np.clip(float(item["entry_score"]) + learned["adjustment"], 0, 100)), 1)
         ranked.append(item)
     return sorted(ranked, key=lambda r: (r["buy_allowed"], r["adaptive_score"],
                                           r["quality_score"]), reverse=True)
@@ -1438,8 +1747,9 @@ def apply_adaptive_ranking(results, training):
 
 def render_adaptive_learning(sb, mode, horizon):
     st.subheader("Adaptivní učení z dokončených signálů")
-    st.caption("Model průběžně přepočítává konzervativní korekci pořadí podle reálných výsledků "
-               "historických simulovaných vstupů. Vstup na open následující seance, "
+    st.caption("Model průběžně odvozuje konzervativní korekci z výsledků "
+               "historických simulovaných vstupů. Může ovlivnit nové doporučení blízko "
+               "rozhodovacího prahu. Vstup na open následující seance, "
                "pouze dokončené denní svíčky; nejasné a nevyplněné vstupy se neučí. "
                f"Simulované náklady {TRAINING_COST_PCT:.2f} % za celý obchod. "
                "Jde o učení z výsledků signálů, nikoli automatický trading ani pravděpodobnost úspěchu.")
@@ -1464,6 +1774,48 @@ def render_adaptive_learning(sb, mode, horizon):
     st.dataframe(df[[c for c in ["ticker","signal_date","outcome","realized_return_pct",
                                  "realized_r","resolved_at"] if c in df]],
                  use_container_width=True, hide_index=True)
+    if mode == "stocks":
+        st.markdown("#### Výsledky: chování trhu × učebnicová analýza × osobní styl")
+        st.caption("Srovnání pouze dokončených SIMULOVANÝCH vstupů, nikoli skutečných obchodů. "
+                   "Skupiny jsou vytvořeny z informací dostupných v době signálu. "
+                   "Jde o popis výsledků, nikoliv důkaz příčinné souvislosti; "
+                   "vstupy se vzájemně překrývají a výběr signálů je selektivní.")
+        rows = []
+        for row in resolved:
+            f = bucket_features(row)
+            entry = safe_float(row.get("realized_entry"))
+            stop = safe_float(row.get("stop_price"))
+            realized = safe_float(row.get("realized_r"))
+            if not (np.isfinite(entry) and np.isfinite(stop) and
+                    np.isfinite(realized) and entry > stop > 0):
+                continue
+            net = realized - (entry * TRAINING_COST_PCT / 100) / (entry - stop)
+            rows.append({"net_r": net, **{k: f.get(k, "missing") for k in
+                        ("crowd", "textbook", "personal", "setup")}})
+        if rows:
+            src = pd.DataFrame(rows)
+            summaries = []
+            labels = {"crowd": "Tržní chování", "textbook": "Učebnicový pohled",
+                      "personal": "Osobní styl", "setup": "Typ vstupu"}
+            for key, label in labels.items():
+                for category, group in src.groupby(key):
+                    if category == "missing":
+                        continue
+                    summaries.append({"Srovnávaný pohled": label,
+                                      "Kategorie": category,
+                                      "Počet vzorků": len(group),
+                                      "Průměrné čisté R": round(float(group["net_r"].mean()), 3),
+                                      "Medián čistého R": round(float(group["net_r"].median()), 3),
+                                      "Podíl ziskových (%)": round(float((group["net_r"] > 0).mean()*100), 1)})
+            if summaries:
+                st.dataframe(pd.DataFrame(summaries), use_container_width=True, hide_index=True)
+            else:
+                st.info("Výsledky dosavadních verzí nemají uložené oddělené pohledy. "
+                        "Srovnání vznikne z nových signálů R6.")
+        st.caption("Čisté R zde zahrnuje modelové celkové náklady "
+                   f"{TRAINING_COST_PCT:.2f} % hodnoty obchodu. "
+                   "Bez skluzu při mimořádných pohybech. "
+                   "Po 30 vyřešených obchodech může model mírně upravovat váhy skórování.")
 
 
 # ---------------------- PLODINY A POČASÍ ----------------------
@@ -1675,7 +2027,7 @@ def render_crop_panel(item):
 # ---------------------- SCAN TICKERU --------------------------
 def buy_signal(mode="stocks", holding_days=5):
     """Signál s identifikátorem původní strategie; horizont plodin je součástí signálu."""
-    return f"PLODINY · NÁKUPNÍ ZÓNA · 4.8 · {holding_days}D" if mode == "crops" else BUY_SIGNAL
+    return f"PLODINY · NÁKUPNÍ ZÓNA · 4.8 · {holding_days}D" if mode == "crops" else R6_BUY_SIGNAL
 
 
 class ScanDataError(ValueError):
@@ -1721,7 +2073,7 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
     patterns = detect_patterns(d)
     structure = analyze_market_structure(d)
 
-    return {
+    item = {
         "ticker":       ticker,
         "mode": mode, "holding_days": holding_days,
         "corporate_events": events,
@@ -1747,7 +2099,9 @@ def scan_ticker(ticker: str, spy: pd.DataFrame, mode="stocks", weather_context=N
         "low52":        float(x["LOW52W"])  if pd.notna(x["LOW52W"])  else np.nan,
         **scores,
         **entry,
+        "market_regime": regime,
     }
+    return apply_aggressive_stock_engine(item) if mode == "stocks" else item
 
 
 # ---------------------- PARALELNÍ SCAN ------------------------
@@ -1934,13 +2288,39 @@ def apply_design():
     """, unsafe_allow_html=True)
 
 
-def render_personal_decision(item, capital, risk_pct, max_position_pct):
+def render_personal_decision(item, capital, risk_pct):
     mode, ticker = item.get("mode", "stocks"), item["ticker"]
-    st.markdown("#### 🧠 Osobní filtr: invalidace → vstup → riziko")
+    st.markdown("#### 🧠 Agresivní rozhodnutí: trh × učebnice × osobní styl" if mode == "stocks"
+                else "#### 🧠 Osobní filtr: invalidace → vstup → riziko")
     action = assess_trade_action(item)
+    if mode == "stocks":
+        st.markdown(f"**DOPORUČENÍ: {action['action_label']}** — {action['action_reason']}")
+        v1, v2, v3, v4 = st.columns(4)
+        for column, label, view in zip((v1, v2, v3),
+            ("Tržní chování · proxy", "Učebnicový trading", "Osobní styl"),
+            (item.get("crowd_view", {}), item.get("textbook_view", {}), item.get("personal_view", {}))):
+            column.metric(label, f"{view.get('score', 50):.1f}/100")
+            column.caption(view.get("label", "NEZNÁMÉ"))
+        v4.metric("Kombinované skóre", f"{item.get('decision_score', 0):.1f}/100")
+        st.caption(f"Model {AGGRESSIVE_MODEL_VERSION} · "
+                   f"setup {item.get('setup', 'NONE')} · {item.get('agreement', '')}. "
+                   "Výsledky nejsou kalibrované pravděpodobnosti úspěchu. "
+                   "Převahu dalších obchodníků pouze odhadujeme z OHLCV, nikoli ze skutečného order flow.")
+        with st.expander("Proč se tři pohledy shodují nebo rozcházejí?", expanded=False):
+            for label, view in (("Chování trhu", item.get("crowd_view", {})),
+                                ("Učebnicový pohled", item.get("textbook_view", {})),
+                                ("Tvůj obchodní styl", item.get("personal_view", {}))):
+                st.write(f"**{label}:** {view.get('label', 'Neznámé')}")
+                for note in view.get("notes", []):
+                    st.write("• " + note)
+            st.caption("Heuristické váhy: chování trhu 40 %, učebnice 35 %, styl 25 %. "
+                       "Po 30 uzavřených modelových obchodech se přičítá konzervativní "
+                       "korekce odvozená z dřívějších vyhodnocených signálů.")
+        if item.get("plan"):
+            st.caption("Typ prvního cíle: " + str(item.get("target_kind", "Neuveden")))
     state, message, rr_live = risk_quote_context(item)
     if not item.get("buy_allowed"):
-        st.warning(f"**Nový nákup podle technických pravidel blokován:** {item['entry_reason']}")
+        st.warning(f"**Nový nákup podle aktuálního modelu nevyhovuje:** {item['entry_reason']}")
     elif state != "V ZÓNĚ":
         st.warning(f"**Nový nákup mimo vstupní oblast:** {message}")
     else:
@@ -1955,22 +2335,37 @@ def render_personal_decision(item, capital, risk_pct, max_position_pct):
     c4.metric("R:R při referenční ceně", display_number(rr_live,2))
     learned = item.get("adaptive_learning", {})
     st.caption(f"Shoda se stylem {item.get('style_score', 0):.0f}/100 (ne pravděpodobnost zisku) · "
-               f"Nezávislá kvalita {item['quality_score']:.1f}/100 · "
-               f"Původní vstupní skóre {item['entry_score']:.1f}/100 · "
+               f"Nezávislá technická kvalita {item['quality_score']:.1f}/100 · "
+               f"Rozhodovací skóre {item['entry_score']:.1f}/100 · "
                f"Adaptivní priorita {item.get('adaptive_score', item['entry_score']):.1f}/100 "
-               f"(korekce {learned.get('adjustment', 0):+.2f}; ověřených výsledků {learned.get('samples', 0)}). "
-               "Adaptivní korekce ovlivňuje pořadí, nikdy neobchází invalidaci.")
-    with st.expander("Kontrola podmínek před nákupem", expanded=False):
-        for label, ok in item.get("entry_checks", {}).items():
-            st.write(("✅ " if ok else "⬜ ") + label)
-        st.caption(learned.get('explanation', 'Učení zatím nemá vyhodnocené signály.'))
+               f"(korekce {learned.get('adjustment', 0):+.2f}; dokončených modelových výsledků "
+               f"{learned.get('samples', 0)}).")
+    if mode == "stocks":
+        with st.expander("Rozhodovací kontrola R6 a porovnání se starým přístupem", expanded=False):
+            st.write("**Nový agresivní model – skutečné podmínky:**")
+            for label, ok in (
+                ("Aktuální dokončená denní data", item.get("fresh_daily_data", False)),
+                ("Likvidní instrument", safe_float(item.get("median_dollar_volume"), 0) >= STRATEGY["min_dollar_volume"]),
+                ("Průzkumný support nebo momentový průraz", item.get("setup") != "NONE"),
+                ("Předem definovaný stop a cíl s R:R ≥ 1,25", item.get("plan") is not None),
+                ("Skóre a objemová kontrola", item.get("buy_allowed", False))):
+                st.write(("✅ " if ok else "⬜ ") + label)
+            st.write("**Původní učebnicový model 4.8 – jen porovnání, ne blokace R6:**")
+            for label, ok in item.get("entry_checks", {}).items():
+                st.write(("✅ " if ok else "⬜ ") + label)
+            st.caption(learned.get('explanation', 'Učení zatím nemá vyhodnocené signály.'))
+    else:
+        with st.expander("Kontrola podmínek před nákupem", expanded=False):
+            for label, ok in item.get("entry_checks", {}).items():
+                st.write(("✅ " if ok else "⬜ ") + label)
+            st.caption(learned.get('explanation', 'Učení zatím nemá vyhodnocené signály.'))
     st.write("**Výpočet pozice z pevného rizika**")
     proposed = st.number_input("Zamýšlená cena nákupu (USD)", min_value=0.01,
          value=max(.01, safe_float(item.get("effective_price"), item["price"])),
          step=.01, format="%.4f", key=f"proposed_{mode}_{ticker}")
     price_ok, rr = check_execution_price(item, proposed)
     shares, full_value, _, per_share = position_size(capital, risk_pct, proposed,
-                                                       item["stop"], max_position_pct)
+                                                       item["stop"])
     if not price_ok or (mode == "stocks" and state == "VAROVÁNÍ"):
         shares, full_value = 0, 0.
         st.warning("Tato cena / původní signál nesplňuje povinné podmínky; výpočet nákupu blokován.")
@@ -1981,8 +2376,9 @@ def render_personal_decision(item, capital, risk_pct, max_position_pct):
     c2.metric("Celá pozice",display_number(full_value,currency=True))
     c3.metric("První tranše 20 %",display_number(full_value*.2,currency=True))
     c4.metric("Plánované riziko celku",display_number(shares*per_share,currency=True))
-    st.caption("Plánované maximum dle zadaného kapitálu a stopu; neobsahuje poplatky, "
-               "skluz ani skoky přes stop. Rozdělení 20/30/50 je pracovní pravidlo pro celý rizikový rozpočet.")
+    st.caption("Plánované maximum podle hotovosti a tebou zvoleného rizika; bez limitu "
+               "diverzifikace. Nezahrnuje poplatky, skluz ani skoky přes stop. "
+               "Rozdělení 20/30/50 je pouze pracovní varianta, nikoliv automatický pokyn.")
     held = st.checkbox("Již držím: zobrazit kontrolu stávající pozice",key=f"held_{mode}_{ticker}")
     if held:
         x1,x2=st.columns(2)
@@ -1995,9 +2391,9 @@ def render_personal_decision(item, capital, risk_pct, max_position_pct):
     st.caption("Návrh je analytická pomůcka, nikoli příkaz u brokera.")
 
 
-def render_instrument(item, capital, risk_pct, max_position_pct):
+def render_instrument(item, capital, risk_pct):
     ticker, mode = item["ticker"], item.get("mode", "stocks")
-    st.subheader(f"{ticker} · {item['signal']}")
+    st.subheader(f"{ticker} · {item.get('decision_action', item['signal'])}")
     st.caption(
         f"Cena {display_number(item['price'], 2, currency=True)} · Vstupní zóna {display_number(item['zone_low'], currency=True)}–"
         f"{display_number(item['zone_high'], currency=True)} · Preferovaný vstup {display_number(item['preferred_entry'], currency=True)}"
@@ -2080,7 +2476,7 @@ def render_instrument(item, capital, risk_pct, max_position_pct):
                f"Zdroj 30d: {item.get('gain_30_source', 'nezjištěn')}. "
                "Oba ukazatele jsou historické vzdálenosti, nikoli předpověď zisku; "
                "mohou být shodné, pokud mají stejné maximum.")
-    render_personal_decision(item, capital, risk_pct, max_position_pct)
+    render_personal_decision(item, capital, risk_pct)
 
     st.markdown("#### 📈 Cena, klouzavé průměry a obchodní úrovně")
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -2289,11 +2685,47 @@ def ticker_summary(item):
             f" · 20s High {display_number(item.get('gain_per_dollar',0),3)} USD/USD"
             f" · 30d High {display_number(item.get('gain_30c_per_dollar',0),3)} USD/USD"
             f" · R:R {display_number(item.get('rr1'),2)}"
-            f" · styl {item.get('style_score', 0):.0f}"
-            f" · priorita {item.get('adaptive_score',item['entry_score']):.1f}")
+             f" · styl {item.get('style_score', 0):.0f}"
+             f" · doporučení {item.get('decision_action', '—')}"
+             f" · priorita {item.get('adaptive_score',item['entry_score']):.1f}")
 
 
-def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
+def render_aggressive_recommendations(raw):
+    """Všechny analyzované akcie, včetně těch skrytých prezentačními filtry."""
+    if not raw:
+        return
+    st.markdown("### Souhrnná rozhodnutí · akcie")
+    st.caption("Návrhy vycházejí z dokončených denních dat. Aktuální PRE/POST cenu "
+               "ověř ještě před pokynem. Filtry 20s/30d ovlivňují PODROBNÉ roletky, "
+               "nikoliv tento kompletní rozhodovací přehled. "
+               "Prodejní signál je uveden jen pro případ, že akcii již držíš.")
+    records = []
+    for item in raw:
+        if item.get("mode") != "stocks":
+            continue
+        review = aggressive_held_review(item)
+        crowd = (item.get("crowd_view") or {}).get("score", np.nan)
+        textbook = (item.get("textbook_view") or {}).get("score", np.nan)
+        personal = (item.get("personal_view") or {}).get("score", np.nan)
+        records.append({"Ticker": item["ticker"],
+                        "Nový obchod": assess_trade_action(item)["action_label"],
+                        "Pokud již držím": review["action_label"],
+                        "Setup": item.get("setup", "NONE"),
+                        "Trh/objem": crowd,
+                        "Učebnice": textbook,
+                        "Osobní styl": personal,
+                        "Skóre": item.get("decision_score", np.nan),
+                        "Vstup D1 (USD)": item.get("preferred_entry", np.nan),
+                        "Stop (USD)": item.get("stop", np.nan),
+                        "Cíl (USD)": item.get("target1", np.nan),
+                        "R:R": item.get("rr1", np.nan)})
+    if records:
+        st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+        st.caption("'Pokud již držím' je orientační kontrola bez znalosti tvé skutečné vstupní "
+                   "ceny a stop-lossu. V jednotlivém panelu je můžeš doplnit.")
+
+
+def render_scan_panels(raw, results, tickers, mode, capital, risk_pct,
                        high_gain=False, outperforming=False, safe_earnings=False, high_gain30=True):
     """Vybrané plodiny mají panel i při chybě dat nebo nesplnění filtru."""
     known = {item["ticker"]: item for item in raw}
@@ -2321,7 +2753,7 @@ def render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_posit
             position_stop=st.session_state.get(f"held_stop_{mode}_{ticker}"),
             position_target=st.session_state.get(f"held_target_{mode}_{ticker}"))
         with st.expander(ticker_summary(item), expanded=False):
-            render_instrument(item, capital, risk_pct, max_position_pct)
+            render_instrument(item, capital, risk_pct)
 
 
 def main():
@@ -2334,9 +2766,10 @@ def main():
     horizon = st.selectbox("Maximální doba držení (obchodní dny)", [5, 10, 20], index=1,
                            key="crop_horizon") if mode == "crops" else 5
     activate_profile(mode, horizon)
-    st.caption(f"Technická hypotéza z dokončených denních svíček · horizont {horizon} seancí · "
-               "ceny PRE/POST jsou oddělené a slouží ke kontrole aktuálního vstupu. "
-               "W1/H4 a intradenní potvrzení aplikace automaticky nevyhodnocuje.")
+    st.caption(f"KLONDIKE R6 · agresivní spot swing bez páky · horizont {horizon} seancí · "
+               "40 % objemové chování, 35 % učebnicové metody, 25 % osobní vstupní styl. "
+               "Analýza z uzavřených D1; PRE/POST pouze kontrola ceny. "
+               "Skutečné instituční pokyny ani 30minutový obrat aplikace nevidí.")
     sb = get_supabase()
     adaptive_sb = get_adaptive_supabase()
     with st.sidebar:
@@ -2363,11 +2796,11 @@ def main():
         st.subheader("Filtry zobrazení")
         high_gain = st.toggle("20 seancí · zisk / 1 USD ≥ 0,06 USD", value=False,
                               key=f"filter_high_gain_{mode}",
-                              help="Prostor k nejvyšší dokončené závěrečné ceně za 20 seancí, nikoli predikce.")
+                               help="Vzdálenost od nejvyšší denní ceny High za 20 seancí, nikoli predikce.")
         high_gain30 = st.toggle("30 kal. dnů · zisk / 1 USD ≥ 0,15 USD", value=True,
                               key=f"filter_high_gain30_{mode}",
-                              help="Prostor k nejvyšší dokončené závěrečné ceně za posledních 30 kalendářních dnů "
-                                   "proti poslední referenční ceně. Oba filtry lze kombinovat.")
+                               help="Vzdálenost od nejvyššího High za 30 kalendářních dnů, "
+                                    "včetně dostupných PRE/POST hodnot. Nejde o předpověď růstu.")
         outperforming = st.toggle("Pouze instrumenty překonávající koš ETC" if mode == "crops" else "Pouze akcie překonávající S&P 500",
                                   value=False, key=f"filter_outperforming_{mode}",
                                   help="Kladná relativní síla za 30 obchodních seancí vůči koši ETC, nebo vůči ETF SPY u akcií.")
@@ -2389,11 +2822,14 @@ def main():
         "🌾 Přehled plodin" if mode == "crops" else "🔎 Přehled akcií", "🗄️ Historie signálů", "🧠 Vyhodnocení signálů"])
     with tab_scan:
         with st.expander("💰 Nastavení velikosti pozice", expanded=False):
-            c1, c2, c3 = st.columns(3)
-            capital = c1.number_input("Kapitál (USD)", min_value=100.0, value=24000.0, step=500.0, key="capital")
-            risk_pct = c2.slider("Riziko na obchod (%)", 0.25, 3.0, 2.0, 0.25, key="risk_pct")
-            max_position_pct = c3.slider("Maximální velikost pozice (%)", 5, 100, 25, 5, key="max_position_pct")
-            st.caption("2 % kapitálu je pracovní rizikový limit pro CELOU pozici; nikoli pro každou tranši zvlášť.")
+            c1, c2 = st.columns(2)
+            capital = c1.number_input("Hotovost pro spotový obchod (USD)", min_value=1.0, value=24000.0,
+                                      step=500.0, key="capital")
+            risk_pct = c2.number_input("Vlastní rizikový rozpočet na obchod (%)", min_value=0.1,
+                                       max_value=100.0, value=2.0, step=0.5, key="risk_pct")
+            st.caption("Není nastaven žádný umělý limit podílu jedné akcie. "
+                       "Velikost pozice omezuje pouze zadaná spotová hotovost a "
+                       "dobrovolně zadané riziko. Stop nechrání před gapem ani skluzem.")
         left, right = st.columns([3, 1])
         left.subheader("Tržní sken")
         run = right.button("Spustit sken plodin" if mode == "crops" else "Sken připravených akcií",
@@ -2446,6 +2882,8 @@ def main():
         raw = st.session_state.results
         results = filter_results(raw, high_gain, outperforming, safe_earnings, high_gain30)
         if st.session_state.scan_has_run:
+            if mode == "stocks":
+                render_aggressive_recommendations(raw)
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Analyzované plodiny" if mode == "crops" else "Analyzované akcie", len(raw))
             c2.metric("Instrumenty splňující filtry" if mode == "crops" else "Akcie splňující filtry", len(results))
@@ -2465,7 +2903,7 @@ def main():
             if results or mode == "crops":
                 st.markdown("### Podrobnosti jednotlivých plodin" if mode == "crops" else "### Podrobnosti jednotlivých akcií")
                 st.caption("Rozbalením panelu zobrazíte analýzu nebo důvod její nedostupnosti.")
-                render_scan_panels(raw, results, tickers, mode, capital, risk_pct, max_position_pct,
+                render_scan_panels(raw, results, tickers, mode, capital, risk_pct,
                                    high_gain, outperforming, safe_earnings, high_gain30)
             if mode == "stocks" and st.session_state.get("scan_diagnostics"):
                 with st.expander("Instrumenty s neúplnými daty", expanded=False):

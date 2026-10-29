@@ -15,7 +15,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-LEARNING_MODEL_VERSION = "adaptive-r1"
+LEARNING_MODEL_VERSION = "adaptive-r2-aggressive"
 TRAINING_COST_PCT = 0.10  # Modelled round-trip costs, percentages of notional.
 MIN_RESOLVED = 30
 MIN_BUCKET = 12
@@ -36,11 +36,32 @@ def bucket_features(row: Mapping[str, Any]) -> dict[str, str]:
     ratio = number(row.get("volume_ratio"))
     trend = number(row.get("trend_score"))
     rr = number(row.get("rr1"))
+    previous = row.get("features", {})
+    previous = previous if isinstance(previous, Mapping) else {}
+
+    def saved_score(name: str, view: str) -> float:
+        obj = row.get(view)
+        direct = obj.get("score") if isinstance(obj, Mapping) else None
+        return number(direct if direct is not None else previous.get(name))
+
+    crowd = saved_score("crowd_score", "crowd_view")
+    textbook = saved_score("textbook_score", "textbook_view")
+    personal = saved_score("personal_score", "personal_view")
+
+    def strength(score: float, high: float, low: float) -> str:
+        return "missing" if not isfinite(score) else (
+            "strong" if score >= high else ("weak" if score <= low else "mixed"))
+
+    setup = row.get("setup") or previous.get("setup") or "missing"
     return {
         "support_atr": "missing" if not isfinite(distance) else ("near" if distance <= 1 else "far"),
         "volume": "missing" if not isfinite(ratio) else ("elevated" if ratio >= 1.2 else "normal"),
         "trend": "missing" if not isfinite(trend) else ("strong" if trend >= 70 else "other"),
         "rr": "missing" if not isfinite(rr) else ("high" if rr >= 2 else "low"),
+        "crowd": strength(crowd, 65, 40),
+        "textbook": strength(textbook, 65, 40),
+        "personal": strength(personal, 60, 35),
+        "setup": str(setup) if setup in {"EARLY_SUPPORT", "MOMENTUM"} else "missing",
     }
 
 
@@ -77,8 +98,9 @@ def outcome_from_bars(row: Mapping[str, Any], historical: pd.DataFrame) -> dict[
         open_price = number(historical["Open"].iloc[idx + 1])
         if not (stop > 0 and target > stop and lower > stop and upper >= lower and open_price > 0):
             return {**pending, "status": "INVALID", "outcome": "INVALID"}
+        required_rr = 1.25 if str(row.get("strategy_version", "")).startswith("6.") else 1.5
         if not (lower <= open_price <= upper and stop < open_price < target and
-                (target - open_price) / (open_price - stop) >= 1.5):
+                (target - open_price) / (open_price - stop) >= required_rr):
             return {**pending, "status": "NOT_FILLED", "outcome": "NOT_FILLED",
                     "resolved_at": str(times[idx + 1].date())}
         horizon = int(row.get("horizon") or 5)
